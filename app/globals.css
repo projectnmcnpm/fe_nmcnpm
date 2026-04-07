@@ -1,23 +1,23 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg-primary: #FFFFFF;
-  --color-bg-secondary: #F3F4F6;
-  --color-bg-card: #FFFFFF;
-  --color-accent-primary: #E63946;
+  --color-bg-primary: #ffffff;
+  --color-bg-secondary: #f3f4f6;
+  --color-bg-card: #ffffff;
+  --color-accent-primary: #e63946;
   --color-accent-neon: #059669;
-  --color-accent-gold: #D97706;
+  --color-accent-gold: #d97706;
   --color-text-primary: #111827;
-  --color-text-secondary: #4B5563;
-  --color-text-muted: #9CA3AF;
-  --color-border-subtle: #E5E7EB;
-  --color-success: #10B981;
-  --color-warning: #F59E0B;
-  --color-danger: #EF4444;
+  --color-text-secondary: #4b5563;
+  --color-text-muted: #9ca3af;
+  --color-border-subtle: #e5e7eb;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
 
-  --font-display: 'Bebas Neue', sans-serif;
-  --font-body: 'DM Sans', sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --font-display: "Space Grotesk", sans-serif;
+  --font-body: "Plus Jakarta Sans", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
 }
 
 @layer base {
@@ -25,9 +25,14 @@
     @apply bg-bg-primary text-text-primary font-body antialiased;
     color-scheme: light;
   }
-  
-  h1, h2, h3, h4, h5, h6 {
-    @apply font-display tracking-wide;
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-display tracking-normal;
   }
 }
 

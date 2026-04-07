@@ -1,31 +1,59 @@
-'use client';
+"use client";
 
-import React, { useState, useRef, useEffect } from 'react';
-import Link from 'next/link';
-import { useRouter, useParams } from 'next/navigation';
-import DashboardLayout from '@/components/layout/DashboardLayout';
-import { ArrowLeft, Upload, X, Image as ImageIcon, Wifi, MonitorPlay, Bath, Wind, Coffee, Sun, Bell, Check } from 'lucide-react';
+import React, { useState, useRef, useEffect } from "react";
+import Link from "next/link";
+import { useRouter, useParams } from "next/navigation";
+import DashboardLayout from "@/components/layout/DashboardLayout";
+import {
+  ArrowLeft,
+  Upload,
+  X,
+  Image as ImageIcon,
+  Wifi,
+  MonitorPlay,
+  Bath,
+  Wind,
+  Coffee,
+  Sun,
+  Bell,
+  Check,
+  Plus,
+  Trash2,
+} from "lucide-react";
+import { useToast } from "@/components/layout/ToastProvider";
+import {
+  ADMIN_ROOM_STATUS_EDIT_OPTIONS,
+  ADMIN_ROOM_TYPE_FORM_OPTIONS,
+} from "@/lib/status-config";
 
 const AMENITIES_LIST = [
-  { id: 'wifi', label: 'Wifi tốc độ cao', icon: Wifi },
-  { id: 'tv', label: 'TV Smart HD', icon: MonitorPlay },
-  { id: 'projector', label: 'Máy chiếu 4K', icon: MonitorPlay },
-  { id: 'bathtub', label: 'Bồn tắm', icon: Bath },
-  { id: 'ac', label: 'Điều hòa', icon: Wind },
-  { id: 'minibar', label: 'Tủ lạnh mini', icon: Coffee },
-  { id: 'balcony', label: 'Ban công', icon: Sun },
-  { id: 'service', label: 'Dịch vụ 24/7', icon: Bell },
+  { id: "wifi", label: "Wifi tốc độ cao", icon: Wifi },
+  { id: "tv", label: "TV Smart HD", icon: MonitorPlay },
+  { id: "projector", label: "Máy chiếu 4K", icon: MonitorPlay },
+  { id: "bathtub", label: "Bồn tắm", icon: Bath },
+  { id: "ac", label: "Điều hòa", icon: Wind },
+  { id: "minibar", label: "Tủ lạnh mini", icon: Coffee },
+  { id: "balcony", label: "Ban công", icon: Sun },
+  { id: "service", label: "Dịch vụ 24/7", icon: Bell },
 ];
 
 export default function EditRoomPage() {
   const router = useRouter();
   const params = useParams();
   const roomId = params.id as string;
+  const { success } = useToast();
 
   const [mainImage, setMainImage] = useState<string | null>(null);
-  const [subImages, setSubImages] = useState<(string | null)[]>([null, null, null, null]);
+  const [subImages, setSubImages] = useState<(string | null)[]>([
+    null,
+    null,
+    null,
+    null,
+  ]);
+  const [amenities, setAmenities] = useState(AMENITIES_LIST);
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
-  
+  const [newAmenity, setNewAmenity] = useState("");
+
   const mainInputRef = useRef<HTMLInputElement>(null);
   const subInputRefs = [
     useRef<HTMLInputElement>(null),
@@ -38,24 +66,37 @@ export default function EditRoomPage() {
   useEffect(() => {
     if (roomId) {
       // Simulate API call to get room details
-      setMainImage('https://images.unsplash.com/photo-1540518614846-7eded433c457?w=800&h=600&fit=crop');
+      setMainImage(
+        "https://images.unsplash.com/photo-1540518614846-7eded433c457?w=800&h=600&fit=crop",
+      );
       setSubImages([
-        'https://images.unsplash.com/photo-1505691938895-1758d7feb511?w=400&h=400&fit=crop',
-        null, null, null
+        "https://images.unsplash.com/photo-1505691938895-1758d7feb511?w=400&h=400&fit=crop",
+        null,
+        null,
+        null,
       ]);
-      setSelectedAmenities(['wifi', 'tv', 'ac', 'minibar']);
+      setSelectedAmenities(["wifi", "tv", "ac", "minibar"]);
+      setAmenities((prev) => [
+        ...prev,
+        { id: "custom-1", label: "Bàn làm việc", icon: Check },
+      ]);
+      setSelectedAmenities((prev) => [...prev, "custom-1"]);
     }
   }, [roomId]);
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'main' | 'sub', index?: number) => {
+  const handleImageUpload = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    type: "main" | "sub",
+    index?: number,
+  ) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onload = (event) => {
         const result = event.target?.result as string;
-        if (type === 'main') {
+        if (type === "main") {
           setMainImage(result);
-        } else if (type === 'sub' && index !== undefined) {
+        } else if (type === "sub" && index !== undefined) {
           const newSubs = [...subImages];
           newSubs[index] = result;
           setSubImages(newSubs);
@@ -65,73 +106,138 @@ export default function EditRoomPage() {
     }
   };
 
-  const removeImage = (type: 'main' | 'sub', index?: number) => {
-    if (type === 'main') {
+  const removeImage = (type: "main" | "sub", index?: number) => {
+    if (type === "main") {
       setMainImage(null);
-      if (mainInputRef.current) mainInputRef.current.value = '';
-    } else if (type === 'sub' && index !== undefined) {
+      if (mainInputRef.current) mainInputRef.current.value = "";
+    } else if (type === "sub" && index !== undefined) {
       const newSubs = [...subImages];
       newSubs[index] = null;
       setSubImages(newSubs);
-      if (subInputRefs[index].current) subInputRefs[index].current!.value = '';
+      if (subInputRefs[index].current) subInputRefs[index].current!.value = "";
     }
   };
 
   const toggleAmenity = (id: string) => {
-    setSelectedAmenities(prev => 
-      prev.includes(id) ? prev.filter(a => a !== id) : [...prev, id]
+    setSelectedAmenities((prev) =>
+      prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id],
     );
   };
 
+  const addAmenity = () => {
+    const trimmedAmenity = newAmenity.trim();
+    if (!trimmedAmenity) return;
+
+    const alreadyExists = amenities.some(
+      (item) => item.label.toLowerCase() === trimmedAmenity.toLowerCase(),
+    );
+
+    if (!alreadyExists) {
+      const newId = `custom-${Date.now()}`;
+      setAmenities((prev) => [
+        ...prev,
+        { id: newId, label: trimmedAmenity, icon: Check },
+      ]);
+      setSelectedAmenities((prev) => [...prev, newId]);
+    }
+    setNewAmenity("");
+  };
+
+  const updateAmenityLabel = (id: string, label: string) => {
+    setAmenities((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, label } : item)),
+    );
+  };
+
+  const removeAmenity = (id: string) => {
+    setAmenities((prev) => prev.filter((item) => item.id !== id));
+    setSelectedAmenities((prev) =>
+      prev.filter((amenityId) => amenityId !== id),
+    );
+  };
+
+  const selectedAmenityLabels = amenities
+    .filter((item) => selectedAmenities.includes(item.id))
+    .map((item) => item.label);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    alert(`Cập nhật phòng ${roomId} thành công!`);
-    router.push('/admin/rooms');
+    success(`Cập nhật phòng ${roomId} thành công!`);
+    router.push("/admin/rooms");
   };
 
   return (
-    <DashboardLayout allowedRoles={['manager']}>
+    <DashboardLayout allowedRoles={["manager"]}>
       <div className="h-full flex flex-col min-h-0 max-w-5xl mx-auto w-full">
         <div className="shrink-0 flex items-center gap-4 mb-6">
-          <Link href="/admin/rooms" className="p-2 bg-bg-secondary rounded hover:bg-border-subtle transition-colors">
+          <Link
+            href="/admin/rooms"
+            className="p-2 bg-bg-secondary rounded hover:bg-border-subtle transition-colors"
+          >
             <ArrowLeft size={20} />
           </Link>
           <div>
-            <h1 className="text-2xl text-text-primary">CẬP NHẬT PHÒNG: <span className="text-accent-neon font-mono">{roomId}</span></h1>
-            <p className="text-sm text-text-secondary">Chỉnh sửa thông tin chi tiết và hình ảnh của phòng</p>
+            <h1 className="text-2xl text-text-primary">
+              CẬP NHẬT PHÒNG:{" "}
+              <span className="text-accent-neon font-mono">{roomId}</span>
+            </h1>
+            <p className="text-sm text-text-secondary">
+              Chỉnh sửa thông tin chi tiết và hình ảnh của phòng
+            </p>
           </div>
         </div>
 
         <div className="flex-1 overflow-auto pr-2">
           <form onSubmit={handleSubmit} className="space-y-8">
-            
             {/* Section 1: Images */}
             <div className="card-cinema p-6">
               <h2 className="text-lg text-text-primary font-bold mb-4 flex items-center gap-2">
-                <ImageIcon size={20} className="text-accent-neon" /> Hình ảnh phòng (Tối đa 5 ảnh)
+                <ImageIcon size={20} className="text-accent-neon" /> Hình ảnh
+                phòng (Tối đa 5 ảnh)
               </h2>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Main Image */}
                 <div className="md:col-span-2">
-                  <p className="text-xs text-text-muted mb-2 uppercase tracking-wider font-bold">Ảnh chính (Cover)</p>
-                  <div 
-                    className={`relative w-full aspect-video rounded-xl border-2 border-dashed flex flex-col items-center justify-center overflow-hidden transition-colors ${mainImage ? 'border-accent-neon' : 'border-border-subtle hover:border-text-muted bg-bg-secondary/50'}`}
+                  <p className="text-xs text-text-muted mb-2 uppercase tracking-wider font-bold">
+                    Ảnh chính (Cover)
+                  </p>
+                  <div
+                    className={`relative w-full aspect-video rounded-xl border-2 border-dashed flex flex-col items-center justify-center overflow-hidden transition-colors ${mainImage ? "border-accent-neon" : "border-border-subtle hover:border-text-muted bg-bg-secondary/50"}`}
                   >
                     {mainImage ? (
                       <>
-                        <img src={mainImage} alt="Main" className="w-full h-full object-cover" />
-                        <button type="button" onClick={() => removeImage('main')} className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-danger text-white rounded-full backdrop-blur-sm transition-colors">
+                        <img
+                          src={mainImage}
+                          alt="Main"
+                          className="w-full h-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeImage("main")}
+                          className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-danger text-white rounded-full backdrop-blur-sm transition-colors"
+                        >
                           <X size={16} />
                         </button>
                       </>
                     ) : (
-                      <div className="text-center cursor-pointer w-full h-full flex flex-col items-center justify-center" onClick={() => mainInputRef.current?.click()}>
+                      <div
+                        className="text-center cursor-pointer w-full h-full flex flex-col items-center justify-center"
+                        onClick={() => mainInputRef.current?.click()}
+                      >
                         <Upload size={32} className="text-text-muted mb-2" />
-                        <span className="text-sm text-text-secondary">Click để tải ảnh lên</span>
+                        <span className="text-sm text-text-secondary">
+                          Click để tải ảnh lên
+                        </span>
                       </div>
                     )}
-                    <input type="file" accept="image/*" className="hidden" ref={mainInputRef} onChange={(e) => handleImageUpload(e, 'main')} />
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      ref={mainInputRef}
+                      onChange={(e) => handleImageUpload(e, "main")}
+                    />
                   </div>
                 </div>
 
@@ -139,24 +245,48 @@ export default function EditRoomPage() {
                 <div className="grid grid-cols-2 gap-4">
                   {subImages.map((img, idx) => (
                     <div key={idx} className="flex flex-col">
-                      <p className="text-xs text-text-muted mb-2 uppercase tracking-wider font-bold">Ảnh phụ {idx + 1}</p>
-                      <div 
-                        className={`relative w-full aspect-square rounded-xl border-2 border-dashed flex flex-col items-center justify-center overflow-hidden transition-colors ${img ? 'border-accent-neon' : 'border-border-subtle hover:border-text-muted bg-bg-secondary/50'}`}
+                      <p className="text-xs text-text-muted mb-2 uppercase tracking-wider font-bold">
+                        Ảnh phụ {idx + 1}
+                      </p>
+                      <div
+                        className={`relative w-full aspect-square rounded-xl border-2 border-dashed flex flex-col items-center justify-center overflow-hidden transition-colors ${img ? "border-accent-neon" : "border-border-subtle hover:border-text-muted bg-bg-secondary/50"}`}
                       >
                         {img ? (
                           <>
-                            <img src={img} alt={`Sub ${idx}`} className="w-full h-full object-cover" />
-                            <button type="button" onClick={() => removeImage('sub', idx)} className="absolute top-2 right-2 p-1 bg-black/50 hover:bg-danger text-white rounded-full backdrop-blur-sm transition-colors">
+                            <img
+                              src={img}
+                              alt={`Sub ${idx}`}
+                              className="w-full h-full object-cover"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeImage("sub", idx)}
+                              className="absolute top-2 right-2 p-1 bg-black/50 hover:bg-danger text-white rounded-full backdrop-blur-sm transition-colors"
+                            >
                               <X size={14} />
                             </button>
                           </>
                         ) : (
-                          <div className="text-center cursor-pointer w-full h-full flex flex-col items-center justify-center" onClick={() => subInputRefs[idx].current?.click()}>
-                            <Upload size={20} className="text-text-muted mb-1" />
-                            <span className="text-xs text-text-muted">Tải ảnh</span>
+                          <div
+                            className="text-center cursor-pointer w-full h-full flex flex-col items-center justify-center"
+                            onClick={() => subInputRefs[idx].current?.click()}
+                          >
+                            <Upload
+                              size={20}
+                              className="text-text-muted mb-1"
+                            />
+                            <span className="text-xs text-text-muted">
+                              Tải ảnh
+                            </span>
                           </div>
                         )}
-                        <input type="file" accept="image/*" className="hidden" ref={subInputRefs[idx]} onChange={(e) => handleImageUpload(e, 'sub', idx)} />
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          ref={subInputRefs[idx]}
+                          onChange={(e) => handleImageUpload(e, "sub", idx)}
+                        />
                       </div>
                     </div>
                   ))}
@@ -166,70 +296,173 @@ export default function EditRoomPage() {
 
             {/* Section 2: Info */}
             <div className="card-cinema p-6">
-              <h2 className="text-lg text-text-primary font-bold mb-4">Thông tin cơ bản</h2>
+              <h2 className="text-lg text-text-primary font-bold mb-4">
+                Thông tin cơ bản
+              </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">Mã phòng *</label>
-                  <input type="text" className="input-field font-mono bg-bg-primary/50 text-text-muted cursor-not-allowed" value={roomId} disabled />
+                  <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">
+                    Mã phòng *
+                  </label>
+                  <input
+                    type="text"
+                    className="input-field font-mono bg-bg-primary/50 text-text-muted cursor-not-allowed"
+                    value={roomId}
+                    disabled
+                  />
                 </div>
                 <div>
-                  <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">Tên phòng *</label>
-                  <input type="text" className="input-field" defaultValue="Single Standard" required />
+                  <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">
+                    Tên phòng *
+                  </label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    defaultValue="Single Standard"
+                    required
+                  />
                 </div>
                 <div>
-                  <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">Loại phòng *</label>
+                  <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">
+                    Loại phòng *
+                  </label>
                   <select className="input-field" defaultValue="SGL" required>
-                    <option value="SGL">Single (1 giường đơn)</option>
-                    <option value="TWN">Twin (2 giường đơn)</option>
-                    <option value="DBL">Double (1 giường đôi)</option>
-                    <option value="TRPL">Triple (1 đôi + 1 đơn)</option>
+                    {ADMIN_ROOM_TYPE_FORM_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">Sức chứa (Người) *</label>
-                  <input type="number" className="input-field" min="1" max="10" defaultValue={1} required />
+                  <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">
+                    Sức chứa (Người) *
+                  </label>
+                  <input
+                    type="number"
+                    className="input-field"
+                    min="1"
+                    max="10"
+                    defaultValue={1}
+                    required
+                  />
                 </div>
                 <div>
-                  <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">Giá mỗi đêm (VNĐ) *</label>
-                  <input type="number" className="input-field font-mono text-accent-gold" defaultValue={450000} required />
+                  <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">
+                    Giá mỗi đêm (VNĐ) *
+                  </label>
+                  <input
+                    type="number"
+                    className="input-field font-mono text-accent-gold"
+                    defaultValue={450000}
+                    required
+                  />
                 </div>
                 <div>
-                  <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">Trạng thái hiện tại</label>
+                  <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">
+                    Trạng thái hiện tại
+                  </label>
                   <select className="input-field" defaultValue="0">
-                    <option value="0">Trống (Sẵn sàng)</option>
-                    <option value="1">Đã đặt / Đang ở</option>
-                    <option value="-1">Đang dọn dẹp</option>
+                    {ADMIN_ROOM_STATUS_EDIT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div className="md:col-span-2">
-                  <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">Mô tả chi tiết</label>
-                  <textarea className="input-field min-h-[120px] resize-y" defaultValue="Phòng tiêu chuẩn dành cho 1 người, trang bị đầy đủ tiện nghi cơ bản."></textarea>
+                  <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">
+                    Mô tả chi tiết
+                  </label>
+                  <textarea
+                    className="input-field min-h-[120px] resize-y"
+                    defaultValue="Phòng tiêu chuẩn dành cho 1 người, trang bị đầy đủ tiện nghi cơ bản."
+                  ></textarea>
                 </div>
               </div>
             </div>
 
             {/* Section 3: Amenities */}
             <div className="card-cinema p-6">
-              <h2 className="text-lg text-text-primary font-bold mb-4">Tiện ích phòng</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {AMENITIES_LIST.map((amenity) => {
+              <h2 className="text-lg text-text-primary font-bold mb-4">
+                Tiện ích phòng
+              </h2>
+              <div className="mb-5 flex flex-col md:flex-row gap-3">
+                <input
+                  type="text"
+                  className="input-field"
+                  placeholder="Thêm tiện ích mới (VD: Máy sấy tóc, Bàn ủi...)"
+                  value={newAmenity}
+                  onChange={(e) => setNewAmenity(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addAmenity();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={addAmenity}
+                  className="btn-outline py-2 flex items-center gap-2 whitespace-nowrap"
+                >
+                  <Plus size={16} /> THÊM TIỆN ÍCH
+                </button>
+              </div>
+
+              {selectedAmenityLabels.length > 0 && (
+                <div className="mb-5 flex flex-wrap gap-2">
+                  {selectedAmenityLabels.map((label) => {
+                    return (
+                      <span
+                        key={label}
+                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent-neon/10 border border-accent-neon/30 text-sm text-accent-neon"
+                      >
+                        {label}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="space-y-3">
+                {amenities.map((amenity) => {
                   const isSelected = selectedAmenities.includes(amenity.id);
                   const Icon = amenity.icon;
                   return (
-                    <div 
+                    <div
                       key={amenity.id}
-                      onClick={() => toggleAmenity(amenity.id)}
-                      className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all ${
-                        isSelected 
-                          ? 'bg-accent-neon/10 border-accent-neon text-accent-neon' 
-                          : 'bg-bg-primary border-border-subtle text-text-secondary hover:border-text-muted'
-                      }`}
+                      className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${isSelected ? "bg-accent-neon/10 border-accent-neon" : "bg-bg-primary border-border-subtle"}`}
                     >
-                      <div className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 ${isSelected ? 'bg-accent-neon border-accent-neon text-black' : 'border-text-muted'}`}>
+                      <button
+                        type="button"
+                        onClick={() => toggleAmenity(amenity.id)}
+                        className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 ${isSelected ? "bg-accent-neon border-accent-neon text-black" : "border-text-muted"}`}
+                      >
                         {isSelected && <Check size={14} strokeWidth={3} />}
-                      </div>
-                      <Icon size={20} className={isSelected ? 'text-accent-neon' : 'text-text-muted'} />
-                      <span className="text-sm font-medium select-none">{amenity.label}</span>
+                      </button>
+                      <Icon
+                        size={18}
+                        className={
+                          isSelected ? "text-accent-neon" : "text-text-muted"
+                        }
+                      />
+                      <input
+                        type="text"
+                        value={amenity.label}
+                        onChange={(e) =>
+                          updateAmenityLabel(amenity.id, e.target.value)
+                        }
+                        className="input-field py-2"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeAmenity(amenity.id)}
+                        className="p-2 text-text-muted hover:text-danger hover:bg-danger/10 rounded transition-colors"
+                        title="Xóa tiện ích"
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     </div>
                   );
                 })}
