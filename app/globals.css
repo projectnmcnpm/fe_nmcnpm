@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg-primary: #FFFFFF;
+  --color-bg-secondary: #F3F4F6;
+  --color-bg-card: #FFFFFF;
+  --color-accent-primary: #E63946;
+  --color-accent-neon: #059669;
+  --color-accent-gold: #D97706;
+  --color-text-primary: #111827;
+  --color-text-secondary: #4B5563;
+  --color-text-muted: #9CA3AF;
+  --color-border-subtle: #E5E7EB;
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-danger: #EF4444;
+
+  --font-display: 'Bebas Neue', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+@layer base {
+  body {
+    @apply bg-bg-primary text-text-primary font-body antialiased;
+    color-scheme: light;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display tracking-wide;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-accent-primary text-white font-bold py-3 px-6 rounded-md hover:bg-red-600 transition-all active:scale-95 uppercase tracking-wider;
+  }
+  .btn-outline {
+    @apply border border-border-subtle text-text-primary font-bold py-3 px-6 rounded-md hover:border-accent-primary hover:text-accent-primary transition-all active:scale-95 uppercase tracking-wider;
+  }
+  .input-field {
+    @apply w-full bg-bg-primary border border-border-subtle rounded-md py-3 px-4 text-text-primary focus:outline-none focus:border-accent-neon focus:ring-1 focus:ring-accent-neon transition-all;
+    color-scheme: light;
+  }
+  .input-field::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+  }
+  .card-cinema {
+    @apply bg-bg-card border border-border-subtle rounded-xl overflow-hidden hover:-translate-y-1 hover:border-accent-neon transition-all duration-300 shadow-sm hover:shadow-md;
+  }
+}
