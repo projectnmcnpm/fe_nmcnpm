@@ -223,6 +223,8 @@ Indexes:
 - V4\_\_create_accounts.sql
 - V5\_\_create_customers.sql
 - V6\_\_seed_data_dev.sql (optional for local)
+- V7\_\_production_hardening.sql
+- V8\_\_create_views_for_frontend.sql
 
 ## 4. ID Generation Rules
 

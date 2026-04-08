@@ -394,3 +394,53 @@ public class GlobalExceptionHandler {
 4. FE pages load and mutate data successfully.
 5. Status transition tests pass.
 6. Upload image endpoint returns stable cloud URL.
+
+## 10. Use SQL Views for FE Read Models (Recommended)
+
+After applying migration `V8__create_views_for_frontend.sql`, backend can read from:
+
+- `vw_room_read_model`
+- `vw_booking_read_model`
+- `vw_account_read_model`
+- `vw_customer_read_model`
+
+Benefits:
+
+- FE response shape is already aligned at SQL layer.
+- Less mapping code in service.
+- Easier to keep consistency across endpoints.
+
+Typical approach in Spring Data JPA:
+
+1. Keep write flow using normal entities/tables.
+2. Add read-only projections/native queries for list/detail endpoints.
+
+Example native projection for bookings:
+
+```java
+public interface BookingReadProjection {
+  String getId();
+  String getRoomId();
+  String getRoomName();
+  String getUserId();
+  String getCustomerPhone();
+  String getCustomerIdNumber();
+  String getCheckIn();
+  String getCheckOut();
+  String getCheckInTime();
+  String getCheckOutTime();
+  String getBookingType();
+  BigDecimal getTotal();
+  String getStatus();
+  String getImage();
+  String getPaymentMethod();
+  String getPaymentAmount();
+  String getCancelReason();
+  OffsetDateTime getCreatedAt();
+}
+
+@Query(value = "select * from vw_booking_read_model where (:userId is null or \"userId\" = :userId)", nativeQuery = true)
+List<BookingReadProjection> findReadModel(@Param("userId") String userId);
+```
+
+This lets controllers return FE-ready fields with minimal conversion.
