@@ -24,9 +24,47 @@ import { useToast } from "@/components/layout/ToastProvider";
 import {
   ADMIN_ROOM_STATUS_EDIT_OPTIONS,
   ADMIN_ROOM_TYPE_FORM_OPTIONS,
-} from "@/lib/status-config";
+} from "../../../../../lib/status-config";
+import { dataService } from "@/lib/data-service";
+import type { Room, RoomStatus } from "@/lib/mock-data";
 
-const AMENITIES_LIST = [
+const ROOM_TYPE_API_MAP: Record<string, string> = {
+  "Single Room": "SGL",
+  "Twin Room": "TWN",
+  "Double Room": "DBL",
+  "VIP Room": "TRPL",
+};
+
+const ROOM_TYPE_FORM_TO_API_MAP: Record<string, string> = {
+  SGL: "Single Room",
+  TWN: "Twin Room",
+  DBL: "Double Room",
+  TRPL: "VIP Room",
+};
+
+const ROOM_TYPE_MAX_CAPACITY: Record<string, number> = {
+  SGL: 1,
+  TWN: 2,
+  DBL: 2,
+  TRPL: 3,
+};
+
+const ROOM_STATUS_API_MAP: Record<string, string> = {
+  available: "0",
+  in_use: "1",
+  pending_cleaning: "2",
+  cleaning_in_progress: "-1",
+  cleaned: "3",
+  maintenance: "-2",
+};
+
+type AmenityItem = {
+  id: string;
+  label: string;
+  icon: React.ElementType;
+};
+
+const AMENITIES_LIST: AmenityItem[] = [
   { id: "wifi", label: "Wifi tốc độ cao", icon: Wifi },
   { id: "tv", label: "TV Smart HD", icon: MonitorPlay },
   { id: "projector", label: "Máy chiếu 4K", icon: MonitorPlay },
@@ -41,7 +79,11 @@ export default function EditRoomPage() {
   const router = useRouter();
   const params = useParams();
   const roomId = params.id as string;
-  const { success } = useToast();
+  const { success, error } = useToast();
+
+  const [room, setRoom] = useState<Room | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [mainImage, setMainImage] = useState<string | null>(null);
   const [subImages, setSubImages] = useState<(string | null)[]>([
@@ -50,9 +92,11 @@ export default function EditRoomPage() {
     null,
     null,
   ]);
-  const [amenities, setAmenities] = useState(AMENITIES_LIST);
+  const [amenities, setAmenities] = useState<AmenityItem[]>(AMENITIES_LIST);
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
   const [newAmenity, setNewAmenity] = useState("");
+  const [selectedTypeCode, setSelectedTypeCode] = useState<string>("");
+  const [capacityInput, setCapacityInput] = useState<string>("");
 
   const mainInputRef = useRef<HTMLInputElement>(null);
   const subInputRefs = [
@@ -62,27 +106,73 @@ export default function EditRoomPage() {
     useRef<HTMLInputElement>(null),
   ];
 
-  // Mock fetching data
+  // Load room data from API
   useEffect(() => {
+    const loadRoom = async () => {
+      try {
+        setIsLoading(true);
+        const fetchedRoom = await dataService.getRoomById(roomId);
+        if (!fetchedRoom) {
+          setRoom(null);
+          return;
+        }
+        setRoom(fetchedRoom);
+
+        const coverImage = fetchedRoom?.image || null;
+        const galleryImages = (fetchedRoom?.gallery || []).slice(0, 4);
+        const nextSubImages = [null, null, null, null] as (string | null)[];
+        galleryImages.forEach((url, index) => {
+          nextSubImages[index] = url;
+        });
+
+        const roomAmenities = (fetchedRoom?.amenities || [])
+          .map((item) => item.trim())
+          .filter(Boolean);
+        const amenityMap = new Map(
+          AMENITIES_LIST.map((item) => [item.label.trim().toLowerCase(), item]),
+        );
+
+        roomAmenities.forEach((label) => {
+          const key = label.toLowerCase();
+          if (!amenityMap.has(key)) {
+            amenityMap.set(key, {
+              id: `db-${key.replace(/\s+/g, "-")}`,
+              label,
+              icon: Check,
+            });
+          }
+        });
+
+        const mergedAmenities = Array.from(amenityMap.values());
+        const selectedAmenityIds = mergedAmenities
+          .filter((item) =>
+            roomAmenities.some(
+              (label) => label.toLowerCase() === item.label.toLowerCase(),
+            ),
+          )
+          .map((item) => item.id);
+
+        setMainImage(coverImage);
+        setSubImages(nextSubImages);
+        setAmenities(mergedAmenities);
+        setSelectedAmenities(selectedAmenityIds);
+        setSelectedTypeCode(ROOM_TYPE_API_MAP[fetchedRoom.type] || "");
+        setCapacityInput(
+          fetchedRoom.capacity !== undefined && fetchedRoom.capacity !== null
+            ? String(fetchedRoom.capacity)
+            : "",
+        );
+      } catch (err) {
+        error("Không thể tải thông tin phòng");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
     if (roomId) {
-      // Simulate API call to get room details
-      setMainImage(
-        "https://images.unsplash.com/photo-1540518614846-7eded433c457?w=800&h=600&fit=crop",
-      );
-      setSubImages([
-        "https://images.unsplash.com/photo-1505691938895-1758d7feb511?w=400&h=400&fit=crop",
-        null,
-        null,
-        null,
-      ]);
-      setSelectedAmenities(["wifi", "tv", "ac", "minibar"]);
-      setAmenities((prev) => [
-        ...prev,
-        { id: "custom-1", label: "Bàn làm việc", icon: Check },
-      ]);
-      setSelectedAmenities((prev) => [...prev, "custom-1"]);
+      void loadRoom();
     }
-  }, [roomId]);
+  }, [roomId, error]);
 
   const handleImageUpload = (
     e: React.ChangeEvent<HTMLInputElement>,
@@ -90,37 +180,42 @@ export default function EditRoomPage() {
     index?: number,
   ) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const result = event.target?.result as string;
-        if (type === "main") {
-          setMainImage(result);
-        } else if (type === "sub" && index !== undefined) {
-          const newSubs = [...subImages];
-          newSubs[index] = result;
-          setSubImages(newSubs);
-        }
-      };
-      reader.readAsDataURL(file);
-    }
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const result = event.target?.result as string;
+      if (type === "main") {
+        setMainImage(result);
+      } else if (type === "sub" && index !== undefined) {
+        const nextImages = [...subImages];
+        nextImages[index] = result;
+        setSubImages(nextImages);
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const removeImage = (type: "main" | "sub", index?: number) => {
     if (type === "main") {
       setMainImage(null);
       if (mainInputRef.current) mainInputRef.current.value = "";
-    } else if (type === "sub" && index !== undefined) {
-      const newSubs = [...subImages];
-      newSubs[index] = null;
-      setSubImages(newSubs);
-      if (subInputRefs[index].current) subInputRefs[index].current!.value = "";
+      return;
+    }
+
+    if (index !== undefined) {
+      const nextImages = [...subImages];
+      nextImages[index] = null;
+      setSubImages(nextImages);
+      if (subInputRefs[index].current) subInputRefs[index].current.value = "";
     }
   };
 
   const toggleAmenity = (id: string) => {
     setSelectedAmenities((prev) =>
-      prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id],
+      prev.includes(id)
+        ? prev.filter((amenityId) => amenityId !== id)
+        : [...prev, id],
     );
   };
 
@@ -134,12 +229,15 @@ export default function EditRoomPage() {
 
     if (!alreadyExists) {
       const newId = `custom-${Date.now()}`;
-      setAmenities((prev) => [
-        ...prev,
-        { id: newId, label: trimmedAmenity, icon: Check },
-      ]);
+      const nextAmenity: AmenityItem = {
+        id: newId,
+        label: trimmedAmenity,
+        icon: Check,
+      };
+      setAmenities((prev) => [...prev, nextAmenity]);
       setSelectedAmenities((prev) => [...prev, newId]);
     }
+
     setNewAmenity("");
   };
 
@@ -160,11 +258,143 @@ export default function EditRoomPage() {
     .filter((item) => selectedAmenities.includes(item.id))
     .map((item) => item.label);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    success(`Cập nhật phòng ${roomId} thành công!`);
-    router.push("/admin/rooms");
+  const currentMaxCapacity = ROOM_TYPE_MAX_CAPACITY[selectedTypeCode] || 10;
+
+  const handleTypeChange = (typeCode: string) => {
+    setSelectedTypeCode(typeCode);
+    const nextMax = ROOM_TYPE_MAX_CAPACITY[typeCode] || 10;
+    if (!capacityInput) return;
+
+    const currentCapacity = Number(capacityInput);
+    if (Number.isFinite(currentCapacity) && currentCapacity > nextMax) {
+      setCapacityInput(String(nextMax));
+    }
   };
+
+  const handleCapacityChange = (value: string) => {
+    if (value === "") {
+      setCapacityInput("");
+      return;
+    }
+
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return;
+    const normalized = Math.max(1, Math.min(parsed, currentMaxCapacity));
+    setCapacityInput(String(normalized));
+  };
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      const formData = new FormData(e.currentTarget);
+      const name = String(formData.get("name") || "").trim();
+      const typeCode =
+        selectedTypeCode || String(formData.get("type") || "").trim();
+      const capacityRaw = capacityInput.trim();
+      const pricePerNightRaw = String(
+        formData.get("pricePerNight") || "",
+      ).trim();
+      const pricePerHourRaw = String(formData.get("pricePerHour") || "").trim();
+      const statusCode = String(formData.get("statusCode") || "0").trim();
+      const description = String(formData.get("description") || "").trim();
+
+      const roomType = ROOM_TYPE_FORM_TO_API_MAP[typeCode];
+      if (!roomType) {
+        throw new Error("Loại phòng không hợp lệ");
+      }
+
+      const pricePerNight = Number(pricePerNightRaw);
+      if (!Number.isFinite(pricePerNight) || pricePerNight < 0) {
+        throw new Error("Giá mỗi đêm không hợp lệ");
+      }
+
+      const capacity = capacityRaw ? Number(capacityRaw) : undefined;
+      if (
+        capacity !== undefined &&
+        (!Number.isFinite(capacity) ||
+          capacity < 1 ||
+          capacity > currentMaxCapacity)
+      ) {
+        throw new Error(
+          `Sức chứa không hợp lệ. Tối đa cho loại phòng này là ${currentMaxCapacity}`,
+        );
+      }
+
+      const pricePerHour = pricePerHourRaw
+        ? Number(pricePerHourRaw)
+        : undefined;
+      if (
+        pricePerHour !== undefined &&
+        (!Number.isFinite(pricePerHour) || pricePerHour < 0)
+      ) {
+        throw new Error("Giá theo giờ không hợp lệ");
+      }
+
+      // Map status code to API status
+      const statusMap: Record<string, RoomStatus> = {
+        "0": "available",
+        "1": "in_use",
+        "2": "pending_cleaning",
+        "-1": "cleaning_in_progress",
+        "3": "cleaned",
+        "-2": "maintenance",
+      };
+      const status = statusMap[statusCode] || "available";
+
+      await dataService.updateRoom(roomId, {
+        name,
+        type: roomType,
+        capacity,
+        pricePerNight,
+        pricePerHour,
+        status,
+        amenities: selectedAmenityLabels
+          .map((item) => item.trim())
+          .filter(Boolean),
+        description: description || undefined,
+      });
+
+      success("Cập nhật phòng thành công!");
+      router.push("/admin/rooms");
+    } catch (submitError) {
+      const message =
+        submitError instanceof Error && submitError.message
+          ? submitError.message
+          : "Cập nhật phòng thất bại";
+      error(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <DashboardLayout allowedRoles={["manager"]}>
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center">
+            <p className="text-text-primary">Đang tải thông tin phòng...</p>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!room) {
+    return (
+      <DashboardLayout allowedRoles={["manager"]}>
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center">
+            <p className="text-danger">Không tìm thấy phòng</p>
+            <Link href="/admin/rooms" className="mt-4 btn-primary inline-block">
+              Quay về danh sách
+            </Link>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout allowedRoles={["manager"]}>
@@ -179,10 +409,10 @@ export default function EditRoomPage() {
           <div>
             <h1 className="text-2xl text-text-primary">
               CẬP NHẬT PHÒNG:{" "}
-              <span className="text-accent-neon font-mono">{roomId}</span>
+              <span className="text-accent-neon font-mono">{room.name}</span>
             </h1>
             <p className="text-sm text-text-secondary">
-              Chỉnh sửa thông tin chi tiết và hình ảnh của phòng
+              Chỉnh sửa thông tin chi tiết của phòng
             </p>
           </div>
         </div>
@@ -302,23 +532,13 @@ export default function EditRoomPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">
-                    Mã phòng *
-                  </label>
-                  <input
-                    type="text"
-                    className="input-field font-mono bg-bg-primary/50 text-text-muted cursor-not-allowed"
-                    value={roomId}
-                    disabled
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">
                     Tên phòng *
                   </label>
                   <input
                     type="text"
+                    name="name"
                     className="input-field"
-                    defaultValue="Single Standard"
+                    defaultValue={room?.name}
                     required
                   />
                 </div>
@@ -326,7 +546,14 @@ export default function EditRoomPage() {
                   <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">
                     Loại phòng *
                   </label>
-                  <select className="input-field" defaultValue="SGL" required>
+                  <select
+                    name="type"
+                    className="input-field"
+                    value={selectedTypeCode}
+                    onChange={(e) => handleTypeChange(e.target.value)}
+                    required
+                  >
+                    <option value="">Chọn loại phòng</option>
                     {ADMIN_ROOM_TYPE_FORM_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
@@ -336,15 +563,16 @@ export default function EditRoomPage() {
                 </div>
                 <div>
                   <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">
-                    Sức chứa (Người) *
+                    Sức chứa (Người) - Tối đa {currentMaxCapacity}
                   </label>
                   <input
                     type="number"
+                    name="capacity"
                     className="input-field"
                     min="1"
-                    max="10"
-                    defaultValue={1}
-                    required
+                    max={currentMaxCapacity}
+                    value={capacityInput}
+                    onChange={(e) => handleCapacityChange(e.target.value)}
                   />
                 </div>
                 <div>
@@ -353,16 +581,33 @@ export default function EditRoomPage() {
                   </label>
                   <input
                     type="number"
+                    name="pricePerNight"
                     className="input-field font-mono text-accent-gold"
-                    defaultValue={450000}
+                    defaultValue={room?.price}
                     required
                   />
                 </div>
                 <div>
                   <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">
-                    Trạng thái hiện tại
+                    Giá theo giờ (VNĐ)
                   </label>
-                  <select className="input-field" defaultValue="0">
+                  <input
+                    type="number"
+                    name="pricePerHour"
+                    className="input-field font-mono text-accent-gold"
+                    defaultValue={room?.pricePerHour || 0}
+                    min="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">
+                    Trạng thái
+                  </label>
+                  <select
+                    name="statusCode"
+                    className="input-field"
+                    defaultValue={ROOM_STATUS_API_MAP[room?.status] || "0"}
+                  >
                     {ADMIN_ROOM_STATUS_EDIT_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
@@ -375,8 +620,9 @@ export default function EditRoomPage() {
                     Mô tả chi tiết
                   </label>
                   <textarea
+                    name="description"
                     className="input-field min-h-[120px] resize-y"
-                    defaultValue="Phòng tiêu chuẩn dành cho 1 người, trang bị đầy đủ tiện nghi cơ bản."
+                    defaultValue={room?.description}
                   ></textarea>
                 </div>
               </div>
@@ -474,8 +720,12 @@ export default function EditRoomPage() {
               <Link href="/admin/rooms" className="btn-outline">
                 HỦY BỎ
               </Link>
-              <button type="submit" className="btn-primary">
-                LƯU THAY ĐỔI
+              <button
+                type="submit"
+                className="btn-primary"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? "ĐANG LƯU..." : "LƯU THAY ĐỔI"}
               </button>
             </div>
           </form>

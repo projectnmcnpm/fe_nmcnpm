@@ -10,12 +10,13 @@ import { useToast } from "@/components/layout/ToastProvider";
 import { useFilteredPagination } from "@/hooks/use-filtered-pagination";
 import {
   ADMIN_ROOM_STATUS_BADGE_CLASSES,
+  ADMIN_ROOM_STATUS_EDIT_OPTIONS,
   ADMIN_ROOM_STATUS_FILTER_OPTIONS,
   ADMIN_ROOM_STATUS_FILTERS,
   ADMIN_ROOM_STATUS_LABELS,
   ADMIN_ROOM_TYPE_FILTER_OPTIONS,
   ADMIN_ROOM_TYPE_FILTERS,
-} from "@/lib/status-config";
+} from "../../../lib/status-config";
 
 export default function AdminRooms() {
   const ITEMS_PER_PAGE = 10;
@@ -24,34 +25,84 @@ export default function AdminRooms() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
-  const { confirm, success } = useToast();
+  const [updatingRoomId, setUpdatingRoomId] = useState<string | null>(null);
+  const { confirm, success, error } = useToast();
 
-  useEffect(() => {
-    const loadRooms = async () => {
-      const result = await dataService.getRooms();
-      setRooms(result);
-    };
-
-    void loadRooms();
+  const loadRooms = useCallback(async () => {
+    const result = await dataService.getRooms();
+    setRooms(result);
   }, []);
 
+  useEffect(() => {
+    void loadRooms();
+
+    const intervalId = window.setInterval(() => {
+      void loadRooms();
+    }, 10000);
+
+    return () => window.clearInterval(intervalId);
+  }, [loadRooms]);
+
   const handleDelete = async (id: string) => {
+    const room = rooms.find((item) => item.id === id);
+    const displayName = room ? room.name : id;
     const shouldDelete = await confirm(
-      `Bạn có chắc chắn muốn xóa phòng ${id}?`,
+      `Bạn có chắc chắn muốn xóa phòng ${displayName}?`,
       { confirmLabel: "Xóa", cancelLabel: "Hủy" },
     );
-    if (shouldDelete) {
+    if (!shouldDelete) {
+      return;
+    }
+
+    try {
       await dataService.deleteRoom(id);
-      setRooms(rooms.filter((room) => room.id !== id));
-      success(`Đã xóa phòng ${id}.`);
+      setRooms((prev) => prev.filter((room) => room.id !== id));
+      success(`Đã xóa phòng ${displayName}.`);
+    } catch (deleteError) {
+      const message =
+        deleteError instanceof Error && deleteError.message
+          ? deleteError.message
+          : "Xóa phòng thất bại";
+      error(message);
+    }
+  };
+
+  const handleQuickStatusChange = async (
+    roomId: string,
+    nextStatus: Room["status"],
+  ) => {
+    const room = rooms.find((item) => item.id === roomId);
+    if (!room || room.status === nextStatus) {
+      return;
+    }
+
+    setUpdatingRoomId(roomId);
+    try {
+      await dataService.updateRoomStatus(roomId, nextStatus);
+      setRooms((prev) =>
+        prev.map((item) =>
+          item.id === roomId ? { ...item, status: nextStatus } : item,
+        ),
+      );
+      success(
+        `Đã đổi trạng thái ${room.name} thành ${ADMIN_ROOM_STATUS_LABELS[nextStatus]}.`,
+      );
+    } catch (updateError) {
+      const message =
+        updateError instanceof Error && updateError.message
+          ? updateError.message
+          : "Cập nhật trạng thái phòng thất bại";
+      error(message);
+    } finally {
+      setUpdatingRoomId(null);
     }
   };
 
   const roomFilter = useCallback(
     (room: Room) => {
-      const matchesSearch =
-        room.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        room.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = room.name
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase());
 
       const selectedType = ADMIN_ROOM_TYPE_FILTERS[typeFilter];
       const matchesType = typeFilter === "all" || room.type === selectedType;
@@ -133,7 +184,7 @@ export default function AdminRooms() {
               />
               <input
                 type="text"
-                placeholder="Tìm mã phòng, tên..."
+                placeholder="Tìm theo tên phòng..."
                 className="input-field pl-10 py-2 text-sm"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -177,9 +228,9 @@ export default function AdminRooms() {
               <thead className="sticky top-0 bg-bg-card z-10">
                 <tr className="border-b border-border-subtle text-text-muted text-xs uppercase tracking-wider">
                   <th className="p-4 font-medium">Ảnh</th>
-                  <th className="p-4 font-medium">Mã phòng</th>
+                  <th className="p-4 font-medium">Tên phòng</th>
                   <th className="p-4 font-medium">Loại</th>
-                  <th className="p-4 font-medium">Giá / Đêm</th>
+                  <th className="p-4 font-medium">Giá</th>
                   <th className="p-4 font-medium">Trạng thái</th>
                   <th className="p-4 font-medium text-right">Hành động</th>
                 </tr>
@@ -206,14 +257,59 @@ export default function AdminRooms() {
                       </td>
                       <td className="p-4">
                         <span className="font-mono text-text-secondary bg-bg-primary px-2 py-1 rounded border border-border-subtle group-hover:border-accent-neon transition-colors">
-                          {room.id}
+                          {room.name}
                         </span>
                       </td>
                       <td className="p-4">{getTypeBadge(room.type)}</td>
                       <td className="p-4 text-accent-gold font-mono">
-                        {room.price.toLocaleString("vi-VN")}đ
+                        <div className="text-sm">
+                          {room.price.toLocaleString("vi-VN")}đ/đêm
+                        </div>
+                        {room.pricePerHour && (
+                          <div className="text-xs text-text-muted">
+                            {room.pricePerHour.toLocaleString("vi-VN")}đ/giờ
+                          </div>
+                        )}
                       </td>
-                      <td className="p-4">{getStatusBadge(room.status)}</td>
+                      <td className="p-4">
+                        <div className="space-y-2">
+                          {getStatusBadge(room.status)}
+                          <select
+                            className="input-field py-1.5 px-2 text-xs bg-bg-primary min-w-[150px]"
+                            value={room.status}
+                            disabled={updatingRoomId === room.id}
+                            onChange={(e) =>
+                              void handleQuickStatusChange(
+                                room.id,
+                                e.target.value as Room["status"],
+                              )
+                            }
+                          >
+                            {ADMIN_ROOM_STATUS_EDIT_OPTIONS.map((option) => {
+                              const statusMap: Record<string, Room["status"]> =
+                                {
+                                  "-2": "maintenance",
+                                  "-1": "cleaning_in_progress",
+                                  "0": "available",
+                                  "1": "in_use",
+                                  "2": "pending_cleaning",
+                                  "3": "cleaned",
+                                };
+                              const mappedStatus = statusMap[option.value];
+
+                              if (!mappedStatus) {
+                                return null;
+                              }
+
+                              return (
+                                <option key={option.value} value={mappedStatus}>
+                                  {ADMIN_ROOM_STATUS_LABELS[mappedStatus]}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </div>
+                      </td>
                       <td className="p-4 text-right">
                         <div className="flex items-center justify-end gap-2">
                           <Link

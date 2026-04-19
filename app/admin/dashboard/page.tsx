@@ -40,7 +40,7 @@ export default function AdminDashboard() {
   }, []);
 
   const totalRevenue = bookings
-    .filter((b) => b.status === "completed")
+    .filter((b) => b.paymentStatus === "paid" && b.refundStatus !== "refunded")
     .reduce((acc, curr) => acc + curr.total, 0);
   const totalBookings = bookings.length;
   const availableRooms = rooms.filter((r) =>
@@ -57,6 +57,13 @@ export default function AdminDashboard() {
 
   const occupancyRate =
     rooms.length > 0 ? Math.round((activeRooms / rooms.length) * 100) : 0;
+
+  const getCustomerName = (booking: Booking) => {
+    if (booking.customerName && booking.customerName.trim().length > 0) {
+      return booking.customerName;
+    }
+    return booking.userId?.split("@")[0] || "Khách hàng";
+  };
 
   return (
     <DashboardLayout allowedRoles={["manager"]}>
@@ -173,8 +180,8 @@ export default function AdminDashboard() {
               <table className="w-full text-left border-collapse">
                 <thead className="sticky top-0 bg-bg-card z-10">
                   <tr className="border-b border-border-subtle text-text-muted text-xs uppercase tracking-wider">
-                    <th className="pb-2 font-medium">Mã</th>
-                    <th className="pb-2 font-medium">Khách hàng</th>
+                    <th className="pb-2 font-medium">Email</th>
+                    <th className="pb-2 font-medium">Tên khách hàng</th>
                     <th className="pb-2 font-medium">Phòng</th>
                     <th className="pb-2 font-medium">Tổng tiền</th>
                     <th className="pb-2 font-medium">Trạng thái</th>
@@ -188,9 +195,11 @@ export default function AdminDashboard() {
                         className="border-b border-border-subtle/50 hover:bg-bg-secondary/50 transition-colors group"
                       >
                         <td className="py-3 font-mono text-text-secondary group-hover:text-text-primary">
-                          {row.id}
+                          {row.userId}
                         </td>
-                        <td className="py-3 text-text-primary">{row.userId}</td>
+                        <td className="py-3 text-text-primary">
+                          {getCustomerName(row)}
+                        </td>
                         <td className="py-3 text-text-secondary">
                           {row.roomName}
                         </td>
@@ -259,10 +268,10 @@ export default function AdminDashboard() {
                   return (
                     <div
                       key={room.id}
-                      className={`aspect-square rounded border flex items-center justify-center font-mono text-xs font-bold cursor-pointer transition-colors ${ADMIN_ROOM_HEATMAP_CLASSES[room.status]}`}
+                      className={`aspect-square rounded border flex items-center justify-center text-[11px] font-bold text-center leading-tight p-1 cursor-pointer transition-colors ${ADMIN_ROOM_HEATMAP_CLASSES[room.status]}`}
                       title={room.name}
                     >
-                      {room.id.replace("RM-", "")}
+                      {room.name}
                     </div>
                   );
                 })}

@@ -22,20 +22,31 @@ export default function RoomsPage() {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [allRooms, setAllRooms] = useState<Room[]>([]);
 
-  useEffect(() => {
-    const loadRooms = async () => {
-      const rooms = await dataService.getRooms();
-      setAllRooms(rooms);
-    };
-
-    void loadRooms();
+  const loadRooms = React.useCallback(async () => {
+    const rooms = await dataService.getRooms();
+    setAllRooms(rooms);
   }, []);
+
+  useEffect(() => {
+    const bootstrapId = window.setTimeout(() => {
+      void loadRooms();
+    }, 0);
+
+    const intervalId = window.setInterval(() => {
+      void loadRooms();
+    }, 10000);
+
+    return () => {
+      window.clearTimeout(bootstrapId);
+      window.clearInterval(intervalId);
+    };
+  }, [loadRooms]);
 
   const filteredRooms = useMemo(() => {
     return allRooms.filter((room) => {
-      const matchesSearch =
-        room.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        room.id.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = room.name
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase());
       const matchesType = typeFilter === "all" || room.type === typeFilter;
 
       let matchesPrice = true;
@@ -146,7 +157,7 @@ export default function RoomsPage() {
             />
             <input
               type="text"
-              placeholder="Tìm theo tên hoặc mã phòng..."
+              placeholder="Tìm theo tên phòng..."
               className="input-field bg-bg-secondary pl-10"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -175,7 +186,7 @@ export default function RoomsPage() {
                 />
                 <input
                   type="text"
-                  placeholder="Tên phòng, mã phòng..."
+                  placeholder="Tên phòng..."
                   className="input-field bg-bg-secondary pl-10"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -237,35 +248,27 @@ export default function RoomsPage() {
                       <img
                         src={room.image}
                         alt={room.name}
-                        className={`w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ${room.status === "full" ? "grayscale" : ""}`}
+                        className={`w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ${room.status === "maintenance" ? "grayscale" : ""}`}
                       />
                       <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-sm text-white text-[11px] font-bold px-2.5 py-1 rounded border border-white/10 uppercase">
                         {room.type}
                       </div>
-                      {room.status === "available" && (
+                      {room.status === "maintenance" && (
+                        <div className="absolute top-3 right-3 bg-danger text-white text-[11px] font-bold px-2.5 py-1 rounded uppercase">
+                          Bảo trì
+                        </div>
+                      )}
+                      {room.status !== "maintenance" && (
                         <div className="absolute top-3 right-3 bg-success text-black text-[11px] font-bold px-2.5 py-1 rounded uppercase">
-                          Còn phòng
-                        </div>
-                      )}
-                      {room.status === "few_left" && (
-                        <div className="absolute top-3 right-3 bg-warning text-black text-[11px] font-bold px-2.5 py-1 rounded uppercase">
-                          Sắp hết
-                        </div>
-                      )}
-                      {room.status === "full" && (
-                        <div className="absolute top-3 right-3 bg-bg-secondary text-text-muted text-[11px] font-bold px-2.5 py-1 rounded border border-border-subtle uppercase">
-                          Hết phòng
+                          Trống
                         </div>
                       )}
                     </div>
                     <div
-                      className={`p-5 ${room.status === "full" ? "opacity-70" : ""}`}
+                      className={`p-5 ${room.status === "maintenance" ? "opacity-70" : ""}`}
                     >
                       <div className="flex justify-between items-start mb-4">
                         <div>
-                          <div className="text-xs font-mono text-text-muted mb-1">
-                            {room.id}
-                          </div>
                           <h3 className="text-xl text-text-primary leading-tight">
                             {room.name}
                           </h3>
@@ -282,7 +285,8 @@ export default function RoomsPage() {
                         {room.amenities.slice(0, 3).map((amenity, index) => (
                           <span
                             key={index}
-                            className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border border-border-subtle bg-bg-primary"
+                            className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border border-border-subtle bg-bg-primary max-w-[170px]"
+                            title={amenity}
                           >
                             {amenity.includes("Người") && <Users size={13} />}
                             {(amenity.includes("4K") ||
@@ -293,7 +297,7 @@ export default function RoomsPage() {
                             {amenity.includes("Bồn tắm") && (
                               <Coffee size={13} />
                             )}
-                            {amenity}
+                            <span className="truncate">{amenity}</span>
                           </span>
                         ))}
                         {room.amenities.length > 3 && (
@@ -304,7 +308,7 @@ export default function RoomsPage() {
                       </div>
 
                       <div className="flex gap-3">
-                        {room.status === "full" ? (
+                        {room.status === "maintenance" ? (
                           <Link
                             href={`/rooms/${room.id}`}
                             className="btn-outline flex-1 py-2 text-sm text-center"

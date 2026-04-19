@@ -40,14 +40,21 @@ const roomTypeToCode = (type: string) => {
 };
 
 const roomStatusToCode = (status: string): StaffRoomStatusCode => {
-  if (status === "cleaning") return -1;
-  if (status === "full" || status === "few_left") return 1;
+  if (status === "maintenance") return -2;
+  if (status === "cleaning_in_progress") return -1;
+  if (status === "pending_cleaning") return 2;
+  if (status === "cleaned") return 3;
+  if (status === "in_use" || status === "full" || status === "few_left")
+    return 1;
   return 0;
 };
 
 const statusCodeToRoomStatus = (statusCode: StaffRoomStatusCode) => {
-  if (statusCode === -1) return "cleaning" as const;
-  if (statusCode === 1) return "full" as const;
+  if (statusCode === -2) return "maintenance" as const;
+  if (statusCode === -1) return "cleaning_in_progress" as const;
+  if (statusCode === 2) return "pending_cleaning" as const;
+  if (statusCode === 3) return "cleaned" as const;
+  if (statusCode === 1) return "in_use" as const;
   return "available" as const;
 };
 
@@ -59,30 +66,41 @@ export default function StaffRooms() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
 
-  useEffect(() => {
-    const loadRooms = async () => {
-      const result = await dataService.getRooms();
-      setRooms(
-        result.map((room) => ({
-          id: room.id,
-          type: roomTypeToCode(room.type),
-          name: room.name,
-          capacity: 1,
-          price: room.price,
-          status: roomStatusToCode(room.status),
-          image: room.image,
-        })),
-      );
-    };
-
-    void loadRooms();
+  const loadRooms = useCallback(async () => {
+    const result = await dataService.getRooms();
+    setRooms(
+      result.map((room) => ({
+        id: room.id,
+        type: roomTypeToCode(room.type),
+        name: room.name,
+        capacity: 1,
+        price: room.price,
+        status: roomStatusToCode(room.status),
+        image: room.image,
+      })),
+    );
   }, []);
+
+  useEffect(() => {
+    const bootstrapId = window.setTimeout(() => {
+      void loadRooms();
+    }, 0);
+
+    const intervalId = window.setInterval(() => {
+      void loadRooms();
+    }, 10000);
+
+    return () => {
+      window.clearTimeout(bootstrapId);
+      window.clearInterval(intervalId);
+    };
+  }, [loadRooms]);
 
   const roomFilter = useCallback(
     (room: StaffRoomRow) => {
-      const matchesSearch =
-        room.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        room.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = room.name
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase());
       const matchesType = typeFilter === "all" || room.type === typeFilter;
       const allowedStatuses =
         STAFF_ROOM_STATUS_CODE_MAP[statusFilter] ??
@@ -121,7 +139,7 @@ export default function StaffRooms() {
     const statusCode =
       status in STAFF_ROOM_STATUS_LABELS ? (status as StaffRoomStatusCode) : 0;
 
-    switch (status) {
+    switch (statusCode) {
       case 0:
         return (
           <span
@@ -131,6 +149,8 @@ export default function StaffRooms() {
           </span>
         );
       case 1:
+      case 2:
+      case -2:
         return (
           <span
             className={`px-2 py-1 rounded text-xs font-bold uppercase flex items-center gap-1 ${STAFF_ROOM_STATUS_BADGE_CLASSES[statusCode]}`}
@@ -139,6 +159,7 @@ export default function StaffRooms() {
           </span>
         );
       case -1:
+      case 3:
         return (
           <span
             className={`px-2 py-1 rounded text-xs font-bold uppercase flex items-center gap-1 ${STAFF_ROOM_STATUS_BADGE_CLASSES[statusCode]}`}
@@ -191,7 +212,7 @@ export default function StaffRooms() {
               />
               <input
                 type="text"
-                placeholder="Tìm mã phòng, tên..."
+                placeholder="Tìm theo tên phòng..."
                 className="input-field pl-10 py-2 text-sm"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -248,10 +269,7 @@ export default function StaffRooms() {
                       className="w-20 h-20 rounded-lg object-cover border border-border-subtle"
                     />
                     <div className="flex-1">
-                      <div className="flex justify-between items-start mb-1">
-                        <span className="font-mono text-accent-neon font-bold">
-                          {room.id}
-                        </span>
+                      <div className="flex justify-end items-start mb-1">
                         {getTypeBadge(room.type)}
                       </div>
                       <h3 className="text-text-primary font-bold text-sm line-clamp-1">

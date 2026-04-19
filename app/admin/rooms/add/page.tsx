@@ -25,6 +25,26 @@ import {
   ADMIN_ROOM_STATUS_CREATE_OPTIONS,
   ADMIN_ROOM_TYPE_FORM_OPTIONS,
 } from "@/lib/status-config";
+import { dataService } from "@/lib/data-service";
+
+const ROOM_TYPE_API_MAP: Record<string, string> = {
+  SGL: "Single Room",
+  TWN: "Twin Room",
+  DBL: "Double Room",
+  TRPL: "VIP Room",
+};
+
+const ROOM_TYPE_MAX_CAPACITY: Record<string, number> = {
+  SGL: 1,
+  TWN: 2,
+  DBL: 2,
+  TRPL: 3,
+};
+
+const ROOM_STATUS_API_MAP = {
+  "0": "available",
+  "-2": "maintenance",
+} as const;
 
 type AmenityItem = {
   id: string;
@@ -45,7 +65,7 @@ const AMENITIES_LIST: AmenityItem[] = [
 
 export default function AddRoomPage() {
   const router = useRouter();
-  const { success } = useToast();
+  const { success, error } = useToast();
 
   const [mainImage, setMainImage] = useState<string | null>(null);
   const [subImages, setSubImages] = useState<(string | null)[]>([
@@ -57,6 +77,9 @@ export default function AddRoomPage() {
   const [amenities, setAmenities] = useState<AmenityItem[]>(AMENITIES_LIST);
   const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
   const [newAmenity, setNewAmenity] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedTypeCode, setSelectedTypeCode] = useState<string>("");
+  const [capacityInput, setCapacityInput] = useState<string>("");
 
   const mainInputRef = useRef<HTMLInputElement>(null);
   const subInputRefs = [
@@ -150,10 +173,118 @@ export default function AddRoomPage() {
     .filter((item) => selectedAmenities.includes(item.id))
     .map((item) => item.label);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const currentMaxCapacity = ROOM_TYPE_MAX_CAPACITY[selectedTypeCode] || 10;
+
+  const handleTypeChange = (typeCode: string) => {
+    setSelectedTypeCode(typeCode);
+    const nextMax = ROOM_TYPE_MAX_CAPACITY[typeCode] || 10;
+    if (!capacityInput) return;
+
+    const currentCapacity = Number(capacityInput);
+    if (Number.isFinite(currentCapacity) && currentCapacity > nextMax) {
+      setCapacityInput(String(nextMax));
+    }
+  };
+
+  const handleCapacityChange = (value: string) => {
+    if (value === "") {
+      setCapacityInput("");
+      return;
+    }
+
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return;
+    const normalized = Math.max(1, Math.min(parsed, currentMaxCapacity));
+    setCapacityInput(String(normalized));
+  };
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    success("Thêm phòng thành công!");
-    router.push("/admin/rooms");
+    setIsSubmitting(true);
+
+    try {
+      const formData = new FormData(e.currentTarget);
+      const name = String(formData.get("name") || "").trim();
+      const typeCode =
+        selectedTypeCode || String(formData.get("type") || "").trim();
+      const capacityRaw = capacityInput.trim();
+      const pricePerNightRaw = String(
+        formData.get("pricePerNight") || "",
+      ).trim();
+      const pricePerHourRaw = String(formData.get("pricePerHour") || "").trim();
+      const statusCode = String(formData.get("statusCode") || "0").trim();
+      const description = String(formData.get("description") || "").trim();
+
+      const roomType = ROOM_TYPE_API_MAP[typeCode];
+      const status =
+        ROOM_STATUS_API_MAP[statusCode as keyof typeof ROOM_STATUS_API_MAP];
+
+      if (!roomType) {
+        throw new Error("Loại phòng không hợp lệ");
+      }
+
+      if (!status) {
+        throw new Error("Trạng thái phòng không hợp lệ");
+      }
+
+      const pricePerNight = Number(pricePerNightRaw);
+      if (!Number.isFinite(pricePerNight) || pricePerNight < 0) {
+        throw new Error("Giá mỗi đêm không hợp lệ");
+      }
+
+      const capacity = capacityRaw ? Number(capacityRaw) : undefined;
+      if (
+        capacity !== undefined &&
+        (!Number.isFinite(capacity) ||
+          capacity < 1 ||
+          capacity > currentMaxCapacity)
+      ) {
+        throw new Error(
+          `Sức chứa không hợp lệ. Tối đa cho loại phòng này là ${currentMaxCapacity}`,
+        );
+      }
+
+      const pricePerHour = pricePerHourRaw
+        ? Number(pricePerHourRaw)
+        : undefined;
+      if (
+        pricePerHour !== undefined &&
+        (!Number.isFinite(pricePerHour) || pricePerHour < 0)
+      ) {
+        throw new Error("Giá theo giờ không hợp lệ");
+      }
+
+      const coverImage = mainInputRef.current?.files?.[0];
+      const galleryFiles = subInputRefs
+        .map((ref) => ref.current?.files?.[0])
+        .filter((file): file is File => Boolean(file));
+
+      const createdRoom = await dataService.createRoom({
+        name,
+        type: roomType,
+        capacity,
+        pricePerNight,
+        pricePerHour,
+        status,
+        amenities: selectedAmenityLabels
+          .map((item) => item.trim())
+          .filter(Boolean),
+        description: description || undefined,
+        coverImage,
+        galleryFiles,
+      });
+
+      success(`Thêm phòng thành công: ${createdRoom.name}`);
+      router.push("/admin/rooms");
+    } catch (submitError) {
+      const message =
+        submitError instanceof Error && submitError.message
+          ? submitError.message
+          : "Thêm phòng thất bại";
+      error(message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -218,6 +349,7 @@ export default function AddRoomPage() {
                     )}
                     <input
                       type="file"
+                      name="coverImage"
                       accept="image/*"
                       className="hidden"
                       ref={mainInputRef}
@@ -266,6 +398,7 @@ export default function AddRoomPage() {
                         )}
                         <input
                           type="file"
+                          name={`gallery-${idx}`}
                           accept="image/*"
                           className="hidden"
                           ref={subInputRefs[idx]}
@@ -285,21 +418,11 @@ export default function AddRoomPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">
-                    Mã phòng *
-                  </label>
-                  <input
-                    type="text"
-                    className="input-field font-mono"
-                    placeholder="VD: RM-101"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">
                     Tên phòng *
                   </label>
                   <input
                     type="text"
+                    name="name"
                     className="input-field"
                     placeholder="VD: Netflix & Chill Suite"
                     required
@@ -309,7 +432,13 @@ export default function AddRoomPage() {
                   <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">
                     Loại phòng *
                   </label>
-                  <select className="input-field" required>
+                  <select
+                    name="type"
+                    className="input-field"
+                    value={selectedTypeCode}
+                    onChange={(e) => handleTypeChange(e.target.value)}
+                    required
+                  >
                     <option value="">Chọn loại phòng</option>
                     {ADMIN_ROOM_TYPE_FORM_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -320,14 +449,17 @@ export default function AddRoomPage() {
                 </div>
                 <div>
                   <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">
-                    Sức chứa (Người) *
+                    Sức chứa (Người) * - Tối đa {currentMaxCapacity}
                   </label>
                   <input
                     type="number"
+                    name="capacity"
                     className="input-field"
                     min="1"
-                    max="10"
+                    max={currentMaxCapacity}
                     placeholder="VD: 2"
+                    value={capacityInput}
+                    onChange={(e) => handleCapacityChange(e.target.value)}
                     required
                   />
                 </div>
@@ -337,6 +469,7 @@ export default function AddRoomPage() {
                   </label>
                   <input
                     type="number"
+                    name="pricePerNight"
                     className="input-field font-mono text-accent-gold"
                     placeholder="VD: 650000"
                     required
@@ -344,9 +477,25 @@ export default function AddRoomPage() {
                 </div>
                 <div>
                   <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">
+                    Giá theo giờ (VNĐ)
+                  </label>
+                  <input
+                    type="number"
+                    name="pricePerHour"
+                    className="input-field font-mono text-accent-gold"
+                    placeholder="VD: 150000"
+                    min="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-text-muted font-bold mb-2 uppercase tracking-wider">
                     Trạng thái ban đầu
                   </label>
-                  <select className="input-field">
+                  <select
+                    name="statusCode"
+                    className="input-field"
+                    defaultValue="0"
+                  >
                     {ADMIN_ROOM_STATUS_CREATE_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
@@ -359,6 +508,7 @@ export default function AddRoomPage() {
                     Mô tả chi tiết
                   </label>
                   <textarea
+                    name="description"
                     className="input-field min-h-[120px] resize-y"
                     placeholder="Nhập mô tả về không gian, phong cách thiết kế..."
                   ></textarea>
@@ -454,8 +604,12 @@ export default function AddRoomPage() {
               <Link href="/admin/rooms" className="btn-outline">
                 HỦY BỎ
               </Link>
-              <button type="submit" className="btn-primary">
-                LƯU PHÒNG MỚI
+              <button
+                type="submit"
+                className="btn-primary"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? "ĐANG LƯU..." : "LƯU PHÒNG MỚI"}
               </button>
             </div>
           </form>

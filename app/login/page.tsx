@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useAuth, TEST_ACCOUNTS } from "@/lib/auth-context";
+import { useAuth } from "@/lib/auth-context";
 import { Film, Mail, Lock, Eye, EyeOff, AlertCircle } from "lucide-react";
 
 function LoginForm() {
@@ -17,43 +17,54 @@ function LoginForm() {
   const [error, setError] = useState("");
   const [isShaking, setIsShaking] = useState(false);
   const [isRegistering, setIsRegistering] = useState(isRegisterParam);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     setIsRegistering(searchParams.get("register") === "true");
   }, [searchParams]);
 
-  const { login } = useAuth();
+  const { login, register } = useAuth();
   const router = useRouter();
+  const roleRouteMap = {
+    customer: "/",
+    receptionist: "/staff/dashboard",
+    cleaner: "/cleaner/dashboard",
+    manager: "/admin/dashboard",
+  } as const;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setIsSubmitting(true);
 
-    if (!email || !password || (isRegistering && (!name || !confirmPassword))) {
-      triggerError("Vui lòng nhập đầy đủ thông tin");
-      return;
-    }
-
-    if (isRegistering && password !== confirmPassword) {
-      triggerError("Mật khẩu xác nhận không khớp");
-      return;
-    }
-
-    if (isRegistering) {
-      // Simulate registration
-      login(email, "customer", name, password);
-      router.push("/");
-    } else {
-      const account = TEST_ACCOUNTS.find(
-        (acc) => acc.email === email && acc.password === password,
-      );
-
-      if (account) {
-        login(account.email, account.role, account.name);
-        router.push(account.redirect);
-      } else {
-        triggerError("Email hoặc mật khẩu không chính xác");
+    try {
+      if (
+        !email ||
+        !password ||
+        (isRegistering && (!name || !confirmPassword))
+      ) {
+        triggerError("Vui lòng nhập đầy đủ thông tin");
+        return;
       }
+
+      if (isRegistering && password !== confirmPassword) {
+        triggerError("Mật khẩu xác nhận không khớp");
+        return;
+      }
+
+      const user = isRegistering
+        ? await register(name, email, password)
+        : await login(email, password);
+
+      router.push(roleRouteMap[user.role]);
+    } catch (submissionError) {
+      const message =
+        submissionError instanceof Error && submissionError.message
+          ? submissionError.message
+          : "Đăng nhập thất bại, vui lòng thử lại";
+      triggerError(message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -222,8 +233,16 @@ function LoginForm() {
               </div>
             )}
 
-            <button type="submit" className="btn-primary w-full">
-              {isRegistering ? "ĐĂNG KÝ" : "ĐĂNG NHẬP"}
+            <button
+              type="submit"
+              className="btn-primary w-full"
+              disabled={isSubmitting}
+            >
+              {isSubmitting
+                ? "ĐANG XỬ LÝ..."
+                : isRegistering
+                  ? "ĐĂNG KÝ"
+                  : "ĐĂNG NHẬP"}
             </button>
 
             <p className="text-text-secondary text-center">

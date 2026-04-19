@@ -95,10 +95,16 @@ export default function HistoryPage() {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case "completed":
+      case "checked_in":
         return (
           <span className="px-3 py-1 bg-success/20 text-success rounded-full text-xs font-bold uppercase flex items-center gap-1">
-            <CheckCircle size={14} /> Đã hoàn thành
+            <CheckCircle size={14} /> Đã check-in
+          </span>
+        );
+      case "in_stay":
+        return (
+          <span className="px-3 py-1 bg-accent-primary/20 text-accent-primary rounded-full text-xs font-bold uppercase flex items-center gap-1">
+            <CheckCircle size={14} /> Đang ở
           </span>
         );
       case "upcoming":
@@ -145,10 +151,16 @@ export default function HistoryPage() {
             Sắp tới
           </button>
           <button
-            onClick={() => setFilter("completed")}
-            className={`px-6 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors ${filter === "completed" ? "bg-success text-bg-primary" : "bg-bg-secondary text-text-secondary hover:text-text-primary"}`}
+            onClick={() => setFilter("checked_in")}
+            className={`px-6 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors ${filter === "checked_in" ? "bg-success text-bg-primary" : "bg-bg-secondary text-text-secondary hover:text-text-primary"}`}
           >
-            Đã hoàn thành
+            Đã check-in
+          </button>
+          <button
+            onClick={() => setFilter("in_stay")}
+            className={`px-6 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors ${filter === "in_stay" ? "bg-accent-primary text-white" : "bg-bg-secondary text-text-secondary hover:text-text-primary"}`}
+          >
+            Đang ở
           </button>
           <button
             onClick={() => setFilter("cancelled")}

@@ -6,104 +6,7 @@ import { Search, ShieldAlert, UserCog, Ban, Trash2, X } from "lucide-react";
 import { useToast } from "@/components/layout/ToastProvider";
 import { dataService } from "@/lib/data-service";
 
-const INITIAL_ACCOUNTS = [
-  {
-    id: "USR-001",
-    email: "quanly@genz.com",
-    name: "Quản Lý",
-    role: "manager",
-    created: "01/01/2023",
-    status: "active",
-  },
-  {
-    id: "USR-002",
-    email: "letan@genz.com",
-    name: "Lễ Tân",
-    role: "receptionist",
-    created: "15/01/2023",
-    status: "active",
-  },
-  {
-    id: "USR-003",
-    email: "dondep@genz.com",
-    name: "Nhân Viên Dọn Dẹp",
-    role: "cleaner",
-    created: "20/01/2023",
-    status: "active",
-  },
-  {
-    id: "USR-004",
-    email: "khachhang@genz.com",
-    name: "Khách Hàng",
-    role: "customer",
-    created: "10/02/2023",
-    status: "active",
-  },
-  {
-    id: "USR-005",
-    email: "nghiviec@genz.com",
-    name: "Nhân Viên Cũ",
-    role: "receptionist",
-    created: "05/03/2023",
-    status: "disabled",
-  },
-  {
-    id: "USR-006",
-    email: "truc.le@genz.com",
-    name: "Truc Le",
-    role: "receptionist",
-    created: "11/03/2023",
-    status: "active",
-  },
-  {
-    id: "USR-007",
-    email: "thao.nguyen@genz.com",
-    name: "Thao Nguyen",
-    role: "customer",
-    created: "21/03/2023",
-    status: "active",
-  },
-  {
-    id: "USR-008",
-    email: "vu.minh@genz.com",
-    name: "Vu Minh",
-    role: "customer",
-    created: "02/04/2023",
-    status: "active",
-  },
-  {
-    id: "USR-009",
-    email: "my.linh@genz.com",
-    name: "My Linh",
-    role: "customer",
-    created: "18/04/2023",
-    status: "disabled",
-  },
-  {
-    id: "USR-010",
-    email: "bao.tran@genz.com",
-    name: "Bao Tran",
-    role: "cleaner",
-    created: "30/04/2023",
-    status: "active",
-  },
-  {
-    id: "USR-011",
-    email: "khanh.ngo@genz.com",
-    name: "Khanh Ngo",
-    role: "receptionist",
-    created: "08/05/2023",
-    status: "active",
-  },
-  {
-    id: "USR-012",
-    email: "lan.anh@genz.com",
-    name: "Lan Anh",
-    role: "customer",
-    created: "25/05/2023",
-    status: "active",
-  },
-];
+const INITIAL_ACCOUNTS: any[] = [];
 
 export default function AdminAccounts() {
   const ITEMS_PER_PAGE = 10;
@@ -127,11 +30,13 @@ export default function AdminAccounts() {
   });
 
   React.useEffect(() => {
-    if (dataService.usingMockData) return;
-
     const loadAccounts = async () => {
-      const result = await dataService.getAccounts();
-      setAccounts(result);
+      try {
+        const result = await dataService.getAccounts();
+        setAccounts(result);
+      } catch {
+        setAccounts([]);
+      }
     };
 
     void loadAccounts();
@@ -170,14 +75,18 @@ export default function AdminAccounts() {
   }, [currentPage, totalPages]);
 
   const handleDelete = async (id: string) => {
+    const account = accounts.find((item) => item.id === id);
+    const displayName = account
+      ? `${account.name}${account.email ? ` (${account.email})` : ""}`
+      : id;
     const shouldDelete = await confirm(
-      `Bạn có chắc chắn muốn xóa tài khoản ${id}?`,
+      `Bạn có chắc chắn muốn xóa tài khoản ${displayName}?`,
       { confirmLabel: "Xóa", cancelLabel: "Hủy" },
     );
     if (shouldDelete) {
       await dataService.deleteAccount(id);
       setAccounts(accounts.filter((a) => a.id !== id));
-      success(`Đã xóa tài khoản ${id}.`);
+      success(`Đã xóa tài khoản ${displayName}.`);
     }
   };
 
@@ -236,22 +145,14 @@ export default function AdminAccounts() {
       );
       success("Cập nhật tài khoản thành công!");
     } else {
-      await dataService.createAccount({
+      const created = await dataService.createAccount({
         name: formData.name,
         email: formData.email,
         role: formData.role as any,
         status: "active",
+        password: formData.password,
       });
-      // Add
-      const newAccount = {
-        id: `USR-00${accounts.length + 1}`,
-        name: formData.name,
-        email: formData.email,
-        role: formData.role,
-        created: new Date().toLocaleDateString("vi-VN"),
-        status: "active",
-      };
-      setAccounts([newAccount, ...accounts]);
+      setAccounts([created, ...accounts]);
       success("Cấp tài khoản mới thành công!");
     }
     setIsModalOpen(false);

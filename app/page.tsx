@@ -125,35 +125,27 @@ export default function HomePage() {
                 <img
                   src={room.image}
                   alt={room.name}
-                  className={`w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ${room.status === "full" ? "grayscale" : ""}`}
+                  className={`w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ${room.status === "maintenance" ? "grayscale" : ""}`}
                 />
                 <div className="absolute top-4 left-4 bg-black/70 backdrop-blur-sm text-white text-xs font-bold px-3 py-1 rounded border border-white/10 uppercase">
                   {room.type}
                 </div>
-                {room.status === "available" && (
+                {room.status === "maintenance" && (
+                  <div className="absolute top-4 right-4 bg-danger text-white text-xs font-bold px-3 py-1 rounded uppercase">
+                    Bảo trì
+                  </div>
+                )}
+                {room.status !== "maintenance" && (
                   <div className="absolute top-4 right-4 bg-success text-black text-xs font-bold px-3 py-1 rounded uppercase">
-                    Còn phòng
-                  </div>
-                )}
-                {room.status === "few_left" && (
-                  <div className="absolute top-4 right-4 bg-warning text-black text-xs font-bold px-3 py-1 rounded uppercase">
-                    Chỉ còn 1
-                  </div>
-                )}
-                {room.status === "full" && (
-                  <div className="absolute top-4 right-4 bg-bg-secondary text-text-muted text-xs font-bold px-3 py-1 rounded border border-border-subtle uppercase">
-                    Hết phòng
+                    Trống
                   </div>
                 )}
               </div>
               <div
-                className={`p-6 ${room.status === "full" ? "opacity-60" : ""}`}
+                className={`p-6 ${room.status === "maintenance" ? "opacity-60" : ""}`}
               >
                 <div className="flex justify-between items-start mb-4">
                   <div>
-                    <div className="text-xs font-mono text-text-muted mb-1">
-                      {room.id}
-                    </div>
                     <h3 className="text-2xl text-text-primary">{room.name}</h3>
                   </div>
                   <div className="text-right">
@@ -163,11 +155,12 @@ export default function HomePage() {
                     <div className="text-xs text-text-muted">/ đêm</div>
                   </div>
                 </div>
-                <div className="flex gap-4 mb-6 text-text-secondary">
-                  {room.amenities.map((amenity, index) => (
+                <div className="flex flex-wrap gap-2 mb-6 text-text-secondary">
+                  {room.amenities.slice(0, 2).map((amenity, index) => (
                     <div
                       key={index}
-                      className="flex items-center gap-1 text-sm"
+                      className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border border-border-subtle bg-bg-primary max-w-[160px]"
+                      title={amenity}
                     >
                       {amenity.includes("Người") && <Users size={16} />}
                       {(amenity.includes("4K") || amenity.includes("HD")) && (
@@ -175,12 +168,17 @@ export default function HomePage() {
                       )}
                       {amenity.includes("Wifi") && <Wifi size={16} />}
                       {amenity.includes("Bồn tắm") && <Coffee size={16} />}
-                      {amenity}
+                      <span className="truncate">{amenity}</span>
                     </div>
                   ))}
+                  {room.amenities.length > 2 && (
+                    <span className="inline-flex items-center text-xs px-2.5 py-1 rounded-full border border-border-subtle bg-bg-primary text-text-muted">
+                      +{room.amenities.length - 2} tiện ích
+                    </span>
+                  )}
                 </div>
                 <div className="flex gap-3">
-                  {room.status === "full" ? (
+                  {room.status === "maintenance" ? (
                     <Link
                       href={`/rooms/${room.id}`}
                       className="btn-outline flex-1 py-2 text-sm text-center"

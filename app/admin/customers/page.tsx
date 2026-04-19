@@ -6,128 +6,7 @@ import { Search, Plus, Eye, Edit2, Trash2, X } from "lucide-react";
 import { useToast } from "@/components/layout/ToastProvider";
 import { dataService } from "@/lib/data-service";
 
-const INITIAL_CUSTOMERS = [
-  {
-    id: "CS-001",
-    name: "Nguyễn Văn A",
-    phone: "0901234567",
-    cccd: "001090123456",
-    email: "nguyenvana@gmail.com",
-    bookings: 5,
-    created: "10/01/2023",
-    color: "bg-blue-500",
-  },
-  {
-    id: "CS-002",
-    name: "Trần Thị B",
-    phone: "0912345678",
-    cccd: "002091234567",
-    email: "tranthib@gmail.com",
-    bookings: 2,
-    created: "15/03/2023",
-    color: "bg-purple-500",
-  },
-  {
-    id: "CS-003",
-    name: "Lê Hoàng C",
-    phone: "0923456789",
-    cccd: "003092345678",
-    email: "lehoangc@gmail.com",
-    bookings: 1,
-    created: "20/05/2023",
-    color: "bg-green-500",
-  },
-  {
-    id: "CS-004",
-    name: "Phạm D",
-    phone: "0934567890",
-    cccd: "004093456789",
-    email: "phamd@gmail.com",
-    bookings: 8,
-    created: "05/08/2023",
-    color: "bg-accent-primary",
-  },
-  {
-    id: "CS-005",
-    name: "Nguyen Thi Lan",
-    phone: "0945678901",
-    cccd: "005094567890",
-    email: "lannt@gmail.com",
-    bookings: 3,
-    created: "11/08/2023",
-    color: "bg-cyan-500",
-  },
-  {
-    id: "CS-006",
-    name: "Do Minh Khoa",
-    phone: "0956789012",
-    cccd: "006095678901",
-    email: "khoadm@gmail.com",
-    bookings: 4,
-    created: "14/08/2023",
-    color: "bg-orange-500",
-  },
-  {
-    id: "CS-007",
-    name: "Vo Bao Tran",
-    phone: "0967890123",
-    cccd: "007096789012",
-    email: "tranvb@gmail.com",
-    bookings: 1,
-    created: "20/08/2023",
-    color: "bg-emerald-500",
-  },
-  {
-    id: "CS-008",
-    name: "Huynh Gia Han",
-    phone: "0978901234",
-    cccd: "008097890123",
-    email: "hanhg@gmail.com",
-    bookings: 6,
-    created: "22/08/2023",
-    color: "bg-pink-500",
-  },
-  {
-    id: "CS-009",
-    name: "Le Quoc Dat",
-    phone: "0989012345",
-    cccd: "009098901234",
-    email: "datlq@gmail.com",
-    bookings: 2,
-    created: "01/09/2023",
-    color: "bg-indigo-500",
-  },
-  {
-    id: "CS-010",
-    name: "Tran Thanh Tung",
-    phone: "0901122334",
-    cccd: "010090112233",
-    email: "tungtt@gmail.com",
-    bookings: 5,
-    created: "10/09/2023",
-    color: "bg-red-500",
-  },
-  {
-    id: "CS-011",
-    name: "Phan Ngoc Mai",
-    phone: "0911223344",
-    cccd: "011091122334",
-    email: "mainp@gmail.com",
-    bookings: 2,
-    created: "16/09/2023",
-    color: "bg-lime-500",
-  },
-  {
-    id: "CS-012",
-    name: "Bui Khac Huy",
-    phone: "0922334455",
-    cccd: "012092233445",
-    email: "huybk@gmail.com",
-    bookings: 7,
-    created: "21/09/2023",
-    color: "bg-sky-500",
-  },
-];
+const INITIAL_CUSTOMERS: any[] = [];
 
 export default function AdminCustomers() {
   const ITEMS_PER_PAGE = 10;
@@ -149,22 +28,24 @@ export default function AdminCustomers() {
   });
 
   React.useEffect(() => {
-    if (dataService.usingMockData) return;
-
     const loadCustomers = async () => {
-      const result = await dataService.getCustomers();
-      setCustomers(
-        result.map((customer) => ({
-          id: customer.id,
-          name: customer.name,
-          phone: customer.phone,
-          cccd: customer.cccd,
-          email: customer.email,
-          bookings: customer.bookings,
-          created: customer.created || "-",
-          color: customer.color || "bg-accent-neon",
-        })),
-      );
+      try {
+        const result = await dataService.getCustomers();
+        setCustomers(
+          result.map((customer) => ({
+            id: customer.id,
+            name: customer.name,
+            phone: customer.phone,
+            cccd: customer.cccd,
+            email: customer.email,
+            bookings: customer.bookings,
+            created: customer.created || "-",
+            color: customer.color || "bg-accent-neon",
+          })),
+        );
+      } catch {
+        setCustomers([]);
+      }
     };
 
     void loadCustomers();
@@ -176,7 +57,7 @@ export default function AdminCustomers() {
         c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         c.phone.includes(searchTerm) ||
         c.cccd.includes(searchTerm) ||
-        c.id.toLowerCase().includes(searchTerm.toLowerCase()),
+        (c.email || "").toLowerCase().includes(searchTerm.toLowerCase()),
     );
   }, [customers, searchTerm]);
 
@@ -184,6 +65,7 @@ export default function AdminCustomers() {
     1,
     Math.ceil(filteredCustomers.length / ITEMS_PER_PAGE),
   );
+
   const paginatedCustomers = useMemo(() => {
     const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
     return filteredCustomers.slice(startIndex, startIndex + ITEMS_PER_PAGE);
@@ -200,14 +82,18 @@ export default function AdminCustomers() {
   }, [currentPage, totalPages]);
 
   const handleDelete = async (id: string) => {
+    const customer = customers.find((item) => item.id === id);
+    const displayName = customer
+      ? `${customer.name}${customer.email ? ` (${customer.email})` : ""}`
+      : id;
     const shouldDelete = await confirm(
-      `Bạn có chắc chắn muốn xóa khách hàng ${id}?`,
+      `Bạn có chắc chắn muốn xóa khách hàng ${displayName}?`,
       { confirmLabel: "Xóa", cancelLabel: "Hủy" },
     );
     if (shouldDelete) {
       await dataService.deleteCustomer(id);
       setCustomers(customers.filter((c) => c.id !== id));
-      success(`Đã xóa khách hàng ${id}.`);
+      success(`Đã xóa khách hàng ${displayName}.`);
     }
   };
 
@@ -231,21 +117,32 @@ export default function AdminCustomers() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (editingCustomer) {
-      await dataService.updateCustomer(editingCustomer.id, {
+      const updated = await dataService.updateCustomer(editingCustomer.id, {
         name: formData.name,
         phone: formData.phone,
         cccd: formData.cccd,
         email: formData.email,
       });
-      // Update
       setCustomers(
         customers.map((c) =>
-          c.id === editingCustomer.id ? { ...c, ...formData } : c,
+          c.id === editingCustomer.id
+            ? {
+                ...c,
+                id: updated.id,
+                name: updated.name,
+                phone: updated.phone,
+                cccd: updated.cccd,
+                email: updated.email,
+                bookings: updated.bookings,
+                created: updated.created || c.created,
+                color: updated.color || c.color,
+              }
+            : c,
         ),
       );
       success("Cập nhật khách hàng thành công!");
     } else {
-      await dataService.createCustomer({
+      const created = await dataService.createCustomer({
         name: formData.name,
         phone: formData.phone,
         cccd: formData.cccd,
@@ -253,13 +150,15 @@ export default function AdminCustomers() {
         created: new Date().toLocaleDateString("vi-VN"),
         color: "bg-accent-neon",
       });
-      // Add
       const newCustomer = {
-        id: `CS-00${customers.length + 1}`,
-        ...formData,
-        bookings: 0,
-        created: new Date().toLocaleDateString("vi-VN"),
-        color: "bg-accent-neon",
+        id: created.id,
+        name: created.name,
+        phone: created.phone,
+        cccd: created.cccd,
+        email: created.email,
+        bookings: created.bookings,
+        created: created.created || new Date().toLocaleDateString("vi-VN"),
+        color: created.color || "bg-accent-neon",
       };
       setCustomers([newCustomer, ...customers]);
       success("Thêm khách hàng thành công!");
@@ -296,7 +195,7 @@ export default function AdminCustomers() {
             />
             <input
               type="text"
-              placeholder="Tìm theo tên, SĐT, CCCD, mã khách..."
+              placeholder="Tìm theo tên, SĐT, CCCD, email..."
               className="input-field pl-10 py-2"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -311,7 +210,7 @@ export default function AdminCustomers() {
               <thead className="sticky top-0 bg-bg-card z-10">
                 <tr className="bg-bg-secondary border-b border-border-subtle text-text-muted text-xs uppercase tracking-wider">
                   <th className="p-4 font-medium w-16">Khách</th>
-                  <th className="p-4 font-medium">Mã KH</th>
+                  <th className="p-4 font-medium">Email KH</th>
                   <th className="p-4 font-medium">Họ tên</th>
                   <th className="p-4 font-medium">Liên hệ</th>
                   <th className="p-4 font-medium">CCCD</th>
@@ -342,7 +241,7 @@ export default function AdminCustomers() {
                       </td>
                       <td className="p-4">
                         <span className="font-mono text-text-secondary">
-                          {customer.id}
+                          {customer.email || "-"}
                         </span>
                       </td>
                       <td className="p-4 font-bold text-text-primary">

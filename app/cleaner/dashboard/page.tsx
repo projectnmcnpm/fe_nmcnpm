@@ -80,7 +80,7 @@ const statusMeta: Record<
 function makeTask(room: Room): CleanerTask {
   return {
     room,
-    state: "pending",
+    state: room.status === "cleaning_in_progress" ? "in_progress" : "pending",
     updatedAt: formatClock(),
   };
 }
@@ -101,7 +101,9 @@ export default function CleanerDashboard() {
   useEffect(() => {
     const loadTasks = async () => {
       const cleaningRooms = (await dataService.getRooms()).filter(
-        (room) => room.status === "cleaning",
+        (room) =>
+          room.status === "pending_cleaning" ||
+          room.status === "cleaning_in_progress",
       );
       const initialTasks = cleaningRooms.map((room) => makeTask(room));
       setTasks(initialTasks);
@@ -170,27 +172,37 @@ export default function CleanerDashboard() {
     );
   };
 
-  const startTask = (roomId: string) => {
-    setTasks((current) =>
-      current.map((task) =>
-        task.room.id === roomId
-          ? {
-              ...task,
-              state: "in_progress",
-              startedAt: task.startedAt ?? formatClock(),
-              updatedAt: formatClock(),
-            }
-          : task,
-      ),
-    );
-
+  const startTask = async (roomId: string) => {
     const task = tasks.find((item) => item.room.id === roomId);
-    pushFeed({
-      label: "Bắt đầu dọn",
-      message: `Đã bắt đầu xử lý ${task?.room.id ?? roomId}.`,
-      tone: "success",
-    });
-    toast.success(`Đã bắt đầu dọn ${task?.room.id ?? roomId}.`);
+    if (!task) {
+      return;
+    }
+
+    try {
+      await dataService.updateRoomStatus(roomId, "cleaning_in_progress");
+      setTasks((current) =>
+        current.map((item) =>
+          item.room.id === roomId
+            ? {
+                ...item,
+                room: { ...item.room, status: "cleaning_in_progress" },
+                state: "in_progress",
+                startedAt: item.startedAt ?? formatClock(),
+                updatedAt: formatClock(),
+              }
+            : item,
+        ),
+      );
+
+      pushFeed({
+        label: "Bắt đầu dọn",
+        message: `Đã bắt đầu xử lý ${task.room.name}.`,
+        tone: "success",
+      });
+      toast.success(`Đã bắt đầu dọn ${task.room.name}.`);
+    } catch {
+      toast.error("Không thể chuyển phòng sang trạng thái đang dọn.");
+    }
   };
 
   const resolveIssue = (roomId: string) => {
@@ -211,10 +223,10 @@ export default function CleanerDashboard() {
     const task = tasks.find((item) => item.room.id === roomId);
     pushFeed({
       label: "Xử lý sự cố",
-      message: `Đã chuyển ${task?.room.id ?? roomId} về trạng thái tiếp tục dọn.`,
+      message: `Đã chuyển ${task?.room.name ?? "phòng này"} về trạng thái tiếp tục dọn.`,
       tone: "info",
     });
-    toast.info(`Đã ghi nhận xử lý lại ${task?.room.id ?? roomId}.`);
+    toast.info(`Đã ghi nhận xử lý lại ${task?.room.name ?? "phòng này"}.`);
   };
 
   const completeTask = async (roomId: string) => {
@@ -228,16 +240,20 @@ export default function CleanerDashboard() {
       return;
     }
 
-    await dataService.updateRoomStatus(roomId, "available");
-    setTasks((current) => current.filter((item) => item.room.id !== roomId));
-    setCompletedCount((count) => count + 1);
+    try {
+      await dataService.updateRoomStatus(roomId, "cleaned");
+      setTasks((current) => current.filter((item) => item.room.id !== roomId));
+      setCompletedCount((count) => count + 1);
 
-    pushFeed({
-      label: "Hoàn tất",
-      message: `Phòng ${task.room.id} đã được đánh dấu sạch và sẵn sàng.`,
-      tone: "success",
-    });
-    toast.success(`Đã hoàn tất ${task.room.id}.`);
+      pushFeed({
+        label: "Hoàn tất",
+        message: `Phòng ${task.room.name} đã chuyển sang trạng thái đã dọn.`,
+        tone: "success",
+      });
+      toast.success(`Đã hoàn tất ${task.room.name}.`);
+    } catch {
+      toast.error("Không thể cập nhật trạng thái phòng sang đã dọn.");
+    }
   };
 
   const submitIssue = () => {
@@ -262,10 +278,10 @@ export default function CleanerDashboard() {
 
     pushFeed({
       label: "Báo sự cố",
-      message: `${task.room.id}: ${issueReason}${issueNote.trim() ? ` - ${issueNote.trim()}` : ""}`,
+      message: `${task.room.name}: ${issueReason}${issueNote.trim() ? ` - ${issueNote.trim()}` : ""}`,
       tone: "warning",
     });
-    toast.warning(`Đã báo sự cố cho ${task.room.id}.`);
+    toast.warning(`Đã báo sự cố cho ${task.room.name}.`);
     setIssueTaskId(null);
     setIssueReason(ISSUE_PRESETS[0]);
     setIssueNote("");
@@ -369,11 +385,8 @@ export default function CleanerDashboard() {
                     Nhiệm vụ tiếp theo
                   </p>
                   <h3 className="text-2xl text-text-primary font-bold leading-tight truncate">
-                    {nextTask.room.id}
-                  </h3>
-                  <p className="text-sm text-text-secondary mt-1 truncate">
                     {nextTask.room.name}
-                  </p>
+                  </h3>
                 </div>
                 <div className="w-12 h-12 rounded-2xl bg-bg-primary/80 border border-border-subtle flex items-center justify-center text-accent-primary shrink-0">
                   <Sparkles size={20} />
@@ -439,11 +452,8 @@ export default function CleanerDashboard() {
                               </span>
                             </div>
                             <h3 className="text-3xl font-display text-text-primary leading-none mb-2">
-                              {task.room.id}
-                            </h3>
-                            <p className="text-sm text-text-secondary truncate">
                               {task.room.name}
-                            </p>
+                            </h3>
                           </div>
                           <div className="w-11 h-11 rounded-2xl bg-bg-primary flex items-center justify-center text-text-muted border border-border-subtle shrink-0">
                             <Clock3 size={18} />
@@ -706,11 +716,8 @@ export default function CleanerDashboard() {
                     Báo sự cố
                   </p>
                   <h3 className="text-xl text-text-primary font-bold truncate">
-                    {currentIssueTask.room.id}
-                  </h3>
-                  <p className="text-sm text-text-secondary truncate">
                     {currentIssueTask.room.name}
-                  </p>
+                  </h3>
                 </div>
                 <button
                   type="button"

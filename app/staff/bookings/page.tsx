@@ -18,7 +18,8 @@ import {
 
 type StaffBookingRow = {
   id: string;
-  customer: string;
+  email: string;
+  customerName: string;
   phone: string;
   room: string;
   checkIn: string;
@@ -26,21 +27,28 @@ type StaffBookingRow = {
   total: number;
   deposit: number;
   status: StaffBookingStatusCode;
+  paymentStatus?: "unpaid" | "deposited" | "paid";
+  refundStatus?: "none" | "eligible" | "ineligible" | "refunded";
 };
 
 const toStatusCode = (status: string): StaffBookingStatusCode => {
-  if (status === "active") return 1;
-  if (status === "completed") return 2;
+  if (status === "checked_in" || status === "active") return 1;
+  if (status === "checked_out" || status === "completed") return 4;
+  if (status === "in_stay") return 2;
   if (status === "cancelled") return 3;
   return 0;
 };
 
 const toStatusValue = (statusCode: StaffBookingStatusCode) => {
-  if (statusCode === 1) return "active" as const;
-  if (statusCode === 2) return "completed" as const;
+  if (statusCode === 1) return "checked_in" as const;
+  if (statusCode === 2) return "in_stay" as const;
+  if (statusCode === 4) return "checked_out" as const;
   if (statusCode === 3) return "cancelled" as const;
   return "upcoming" as const;
 };
+
+const isCancelledStatus = (statusCode: StaffBookingStatusCode) =>
+  statusCode === 3;
 
 const toDateLabel = (isoDate: string) => {
   if (!isoDate) return "-";
@@ -52,16 +60,29 @@ const toDateLabel = (isoDate: string) => {
 const mapToRow = (
   booking: Awaited<ReturnType<typeof dataService.getBookings>>[number],
 ): StaffBookingRow => {
+  const deposited =
+    booking.paymentStatus === "paid"
+      ? booking.total
+      : booking.paymentStatus === "deposited"
+        ? Math.round(
+            (booking.total * Number(booking.paymentAmount || 0)) / 100,
+          ) || 0
+        : 0;
+
   return {
     id: booking.id,
-    customer: booking.userId || "Khách hàng",
+    email: booking.userId || "-",
+    customerName:
+      booking.customerName || booking.userId?.split("@")[0] || "Khách hàng",
     phone: booking.customerPhone || "-",
-    room: booking.roomId || booking.roomName || "-",
+    room: booking.roomName || booking.roomId || "-",
     checkIn: toDateLabel(booking.checkIn),
     checkOut: toDateLabel(booking.checkOut),
     total: booking.total,
-    deposit: 0,
+    deposit: deposited,
     status: toStatusCode(booking.status),
+    paymentStatus: booking.paymentStatus,
+    refundStatus: booking.refundStatus,
   };
 };
 
@@ -70,8 +91,26 @@ export default function StaffBookings() {
   const [bookings, setBookings] = useState<StaffBookingRow[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const { confirm, success } = useToast();
+  const [updatingPaymentBookingId, setUpdatingPaymentBookingId] = useState<
+    string | null
+  >(null);
+  const { confirm, success, error } = useToast();
+
+  const mapFilterToExportStatus = (filterValue: string) => {
+    const statusMap: Record<string, string | undefined> = {
+      all: undefined,
+      "0": "upcoming",
+      "1": "checked_in",
+      "2": "in_stay",
+      "4": "checked_out",
+      "3": "cancelled",
+    };
+    return statusMap[filterValue];
+  };
 
   useEffect(() => {
     const loadBookings = async () => {
@@ -83,14 +122,16 @@ export default function StaffBookings() {
   }, []);
 
   const handleDeleteBooking = async (id: string) => {
+    const target = bookings.find((booking) => booking.id === id);
+    const displayName = target ? `${target.customerName} - ${target.room}` : id;
     const shouldDelete = await confirm(
-      `Bạn có chắc chắn muốn xóa đặt phòng ${id}?`,
+      `Bạn có chắc chắn muốn xóa đặt phòng ${displayName}?`,
       { confirmLabel: "Xóa", cancelLabel: "Hủy" },
     );
     if (shouldDelete) {
       await dataService.deleteBooking(id);
       setBookings(bookings.filter((b) => b.id !== id));
-      success(`Đã xóa đặt phòng ${id}.`);
+      success(`Đã xóa đặt phòng ${displayName}.`);
     }
   };
 
@@ -102,16 +143,69 @@ export default function StaffBookings() {
     );
   };
 
+  const handlePaymentStatusChange = async (
+    id: string,
+    paymentStatus: "unpaid" | "deposited" | "paid",
+  ) => {
+    const target = bookings.find((booking) => booking.id === id);
+    if (target && isCancelledStatus(target.status)) {
+      return;
+    }
+
+    setUpdatingPaymentBookingId(id);
+    try {
+      await dataService.updateBookingPaymentStatus(id, paymentStatus);
+      const result = await dataService.getBookings();
+      setBookings(result.map(mapToRow));
+      success("Đã cập nhật trạng thái thanh toán.");
+    } finally {
+      setUpdatingPaymentBookingId(null);
+    }
+  };
+
+  const handleExportBookings = async () => {
+    if (fromDate && toDate && new Date(fromDate) > new Date(toDate)) {
+      error("Ngày bắt đầu không được lớn hơn ngày kết thúc");
+      return;
+    }
+
+    try {
+      setIsExporting(true);
+      const file = await dataService.exportBookingsCsv({
+        status: mapFilterToExportStatus(statusFilter),
+        from: fromDate || undefined,
+        to: toDate || undefined,
+      });
+
+      const downloadUrl = window.URL.createObjectURL(file.blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = file.fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+
+      success("Xuất file đặt phòng thành công");
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Xuất file thất bại";
+      error(message);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const bookingFilter = useCallback(
     (booking: StaffBookingRow) => {
       const matchesSearch =
-        booking.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        booking.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        booking.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        booking.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        booking.room.toLowerCase().includes(searchTerm.toLowerCase()) ||
         booking.phone.includes(searchTerm);
       const allowedStatuses =
         statusFilter === "all"
-          ? [0, 1, 2, 3]
-          : (STAFF_BOOKING_STATUS_CODE_MAP[statusFilter] ?? [0, 1, 2, 3]);
+          ? [0, 1, 2, 4, 3]
+          : (STAFF_BOOKING_STATUS_CODE_MAP[statusFilter] ?? [0, 1, 2, 4, 3]);
       const matchesStatus = allowedStatuses.includes(booking.status);
 
       return matchesSearch && matchesStatus;
@@ -147,6 +241,33 @@ export default function StaffBookings() {
     );
   };
 
+  const getPaymentStatusBadge = (status?: StaffBookingRow["paymentStatus"]) => {
+    const map = {
+      unpaid: {
+        label: "Chưa thanh toán",
+        className:
+          "bg-bg-secondary text-text-muted border border-border-subtle",
+      },
+      deposited: {
+        label: "Đã cọc",
+        className: "bg-warning/20 text-warning border border-warning/30",
+      },
+      paid: {
+        label: "Đã thanh toán",
+        className: "bg-success/20 text-success border border-success/30",
+      },
+    } as const;
+
+    const resolved = map[status || "unpaid"];
+    return (
+      <span
+        className={`px-2 py-1 rounded text-xs font-bold uppercase ${resolved.className}`}
+      >
+        {resolved.label}
+      </span>
+    );
+  };
+
   return (
     <DashboardLayout allowedRoles={["receptionist", "manager"]}>
       <div className="h-full flex flex-col min-h-0">
@@ -165,7 +286,6 @@ export default function StaffBookings() {
           </Link>
         </div>
 
-        {/* Filter Row */}
         <div className="shrink-0 bg-bg-secondary p-4 rounded-xl border border-border-subtle mb-4 flex flex-wrap gap-4 items-center justify-between">
           <div className="flex flex-wrap gap-4 flex-1">
             <div className="relative w-full md:w-64">
@@ -175,7 +295,7 @@ export default function StaffBookings() {
               />
               <input
                 type="text"
-                placeholder="Tên, SĐT, Mã booking..."
+                placeholder="Email, tên khách, phòng, SĐT..."
                 className="input-field pl-10 py-2 text-sm"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -190,6 +310,8 @@ export default function StaffBookings() {
                 <input
                   type="date"
                   className="input-field pl-10 py-2 text-sm w-40"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
                 />
               </div>
               <span className="text-text-muted">-</span>
@@ -201,6 +323,8 @@ export default function StaffBookings() {
                 <input
                   type="date"
                   className="input-field pl-10 py-2 text-sm w-40"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
                 />
               </div>
             </div>
@@ -217,31 +341,39 @@ export default function StaffBookings() {
             </select>
           </div>
 
-          <button className="btn-outline py-2 text-sm flex items-center gap-2 text-accent-neon border-accent-neon/50 hover:border-accent-neon hover:bg-accent-neon/10">
-            <Download size={16} /> XUẤT EXCEL
+          <button
+            className="btn-outline py-2 text-sm flex items-center gap-2 text-accent-neon border-accent-neon/50 hover:border-accent-neon hover:bg-accent-neon/10 disabled:opacity-60 disabled:cursor-not-allowed"
+            onClick={() => void handleExportBookings()}
+            disabled={isExporting}
+          >
+            <Download size={16} /> {isExporting ? "ĐANG XUẤT..." : "XUẤT EXCEL"}
           </button>
         </div>
 
-        {/* Table */}
         <div className="flex-1 min-h-0 card-cinema flex flex-col overflow-hidden">
           <div className="flex-1 overflow-auto">
             <table className="w-full text-left border-collapse whitespace-nowrap">
               <thead className="sticky top-0 bg-bg-card z-10">
                 <tr className="border-b border-border-subtle text-text-muted text-xs uppercase tracking-wider">
-                  <th className="p-4 font-medium">Mã Booking</th>
-                  <th className="p-4 font-medium">Khách hàng</th>
+                  <th className="p-4 font-medium">Email</th>
+                  <th className="p-4 font-medium">Tên khách hàng</th>
                   <th className="p-4 font-medium">Phòng</th>
                   <th className="p-4 font-medium">Check-in / Check-out</th>
                   <th className="p-4 font-medium">Tổng tiền</th>
                   <th className="p-4 font-medium">Đã cọc</th>
-                  <th className="p-4 font-medium">Trạng thái</th>
+                  <th className="p-4 font-medium">Trạng thái đặt phòng</th>
+                  <th className="p-4 font-medium">Trạng thái thanh toán</th>
+                  <th className="p-4 font-medium">Hoàn tiền</th>
                   <th className="p-4 font-medium text-right">Hành động</th>
                 </tr>
               </thead>
               <tbody className="text-sm">
                 {filteredBookings.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="p-8 text-center text-text-muted">
+                    <td
+                      colSpan={10}
+                      className="p-8 text-center text-text-muted"
+                    >
                       Không tìm thấy đặt phòng nào phù hợp.
                     </td>
                   </tr>
@@ -252,13 +384,13 @@ export default function StaffBookings() {
                       className="border-b border-border-subtle/50 hover:bg-bg-secondary/50 transition-colors group"
                     >
                       <td className="p-4">
-                        <span className="font-mono text-accent-gold bg-accent-gold/10 px-2 py-1 rounded">
-                          {booking.id}
-                        </span>
+                        <div className="font-mono text-text-primary">
+                          {booking.email}
+                        </div>
                       </td>
                       <td className="p-4">
                         <div className="font-bold text-text-primary">
-                          {booking.customer}
+                          {booking.customerName}
                         </div>
                         <div className="text-xs text-text-muted">
                           {booking.phone}
@@ -290,7 +422,7 @@ export default function StaffBookings() {
                             onChange={(e) =>
                               handleStatusChange(
                                 booking.id,
-                                parseInt(e.target.value),
+                                parseInt(e.target.value, 10),
                               )
                             }
                           >
@@ -303,6 +435,47 @@ export default function StaffBookings() {
                             )}
                           </select>
                         </div>
+                      </td>
+                      <td className="p-4">
+                        <div className="flex flex-col gap-2 items-start">
+                          {getPaymentStatusBadge(booking.paymentStatus)}
+                          <select
+                            className="bg-bg-primary border border-border-subtle text-text-secondary text-xs rounded px-2 py-1 outline-none focus:border-accent-neon w-full max-w-[160px]"
+                            value={booking.paymentStatus || "unpaid"}
+                            disabled={
+                              updatingPaymentBookingId === booking.id ||
+                              isCancelledStatus(booking.status)
+                            }
+                            onChange={(e) =>
+                              void handlePaymentStatusChange(
+                                booking.id,
+                                e.target.value as
+                                  | "unpaid"
+                                  | "deposited"
+                                  | "paid",
+                              )
+                            }
+                          >
+                            <option value="unpaid">Đổi: Chưa thanh toán</option>
+                            <option value="deposited">Đổi: Đã cọc</option>
+                            <option value="paid">Đổi: Đã thanh toán</option>
+                          </select>
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        {booking.status === 3 ? (
+                          <span className="px-2 py-1 rounded text-xs font-bold uppercase bg-bg-primary border border-border-subtle text-text-secondary">
+                            {booking.refundStatus === "eligible"
+                              ? "Hủy được hoàn tiền"
+                              : booking.refundStatus === "ineligible"
+                                ? "Hủy không hoàn tiền"
+                                : booking.refundStatus === "refunded"
+                                  ? "Đã hoàn tiền"
+                                  : "Không áp dụng"}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-text-muted">-</span>
+                        )}
                       </td>
                       <td className="p-4 text-right">
                         <div className="flex items-center justify-end gap-2">

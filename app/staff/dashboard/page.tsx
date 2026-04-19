@@ -30,7 +30,7 @@ export default function StaffDashboard() {
   }, []);
 
   const upcomingBookings = bookings.filter((b) => b.status === "upcoming");
-  const activeBookings = bookings.filter((b) => b.status === "active");
+  const activeBookings = bookings.filter((b) => b.status === "in_stay");
   const visibleUpcomingBookings = upcomingBookings.slice(
     0,
     DASHBOARD_LIST_LIMIT,
@@ -40,18 +40,28 @@ export default function StaffDashboard() {
   const availableRooms = rooms.filter((r) =>
     ADMIN_ROOM_STATUS_FILTERS["0"].includes(r.status),
   ).length;
-  const cleaningRooms = rooms.filter((r) =>
-    ADMIN_ROOM_STATUS_FILTERS["-1"].includes(r.status),
+  const cleaningRooms = rooms.filter(
+    (r) =>
+      ADMIN_ROOM_STATUS_FILTERS["2"].includes(r.status) ||
+      ADMIN_ROOM_STATUS_FILTERS["-1"].includes(r.status),
   ).length;
 
   const handleCheckIn = async (id: string) => {
-    await dataService.updateBookingStatus(id, "active");
+    await dataService.updateBookingStatus(id, "checked_in");
+    const bookingResult = await dataService.getBookings();
+    setBookings(bookingResult);
+  };
+
+  const handleMoveToInStay = async (id: string) => {
+    await dataService.updateBookingStatus(id, "in_stay");
     const bookingResult = await dataService.getBookings();
     setBookings(bookingResult);
   };
 
   const handleCheckOut = async (id: string) => {
-    await dataService.updateBookingStatus(id, "completed");
+    await dataService.updateBookingStatus(id, "checked_out");
+    const roomResult = await dataService.getRooms();
+    setRooms(roomResult);
     const bookingResult = await dataService.getBookings();
     setBookings(bookingResult);
   };
@@ -83,7 +93,7 @@ export default function StaffDashboard() {
         </div>
         <div className="bg-bg-secondary border border-border-subtle rounded-xl p-4 text-center">
           <div className="text-text-muted text-xs font-bold uppercase mb-1">
-            {BOOKING_STATUS_LABELS.active}
+            {BOOKING_STATUS_LABELS.in_stay}
           </div>
           <div className="text-3xl font-display text-accent-neon">
             {activeBookings.length}
@@ -149,6 +159,12 @@ export default function StaffDashboard() {
                     >
                       <CheckCircle size={14} /> CHECK-IN
                     </button>
+                    <button
+                      onClick={() => handleMoveToInStay(item.id)}
+                      className="bg-accent-neon text-black font-bold text-xs px-4 py-2 rounded hover:opacity-90 transition-colors"
+                    >
+                      VÀO Ở
+                    </button>
                   </div>
                 ))
               )}
@@ -198,7 +214,7 @@ export default function StaffDashboard() {
                       onClick={() => handleCheckOut(item.id)}
                       className="bg-accent-primary text-white font-bold text-xs px-4 py-2 rounded hover:bg-red-600 transition-colors"
                     >
-                      THANH TOÁN & CHECK-OUT
+                      CHECK-OUT
                     </button>
                   </div>
                 ))

@@ -5,116 +5,7 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Search, Plus, Edit2, X } from "lucide-react";
 import { dataService } from "@/lib/data-service";
 
-const INITIAL_CUSTOMERS = [
-  {
-    id: "KH-001",
-    name: "Nguyễn Văn A",
-    phone: "0901234567",
-    email: "nguyenvana@email.com",
-    cccd: "012345678912",
-    bookings: 3,
-    lastVisit: "20/10/2023",
-  },
-  {
-    id: "KH-002",
-    name: "Trần Thị B",
-    phone: "0912345678",
-    email: "tranthib@email.com",
-    cccd: "098765432109",
-    bookings: 1,
-    lastVisit: "19/10/2023",
-  },
-  {
-    id: "KH-003",
-    name: "Lê Hoàng C",
-    phone: "0923456789",
-    email: "lehoangc@email.com",
-    cccd: "011223344556",
-    bookings: 5,
-    lastVisit: "18/10/2023",
-  },
-  {
-    id: "KH-004",
-    name: "Pham Quoc Huy",
-    phone: "0934567890",
-    email: "huypham@email.com",
-    cccd: "022334455667",
-    bookings: 2,
-    lastVisit: "17/10/2023",
-  },
-  {
-    id: "KH-005",
-    name: "Nguyen Thi Lan",
-    phone: "0945678901",
-    email: "lannt@email.com",
-    cccd: "033445566778",
-    bookings: 4,
-    lastVisit: "16/10/2023",
-  },
-  {
-    id: "KH-006",
-    name: "Do Minh Khoa",
-    phone: "0956789012",
-    email: "khoadm@email.com",
-    cccd: "044556677889",
-    bookings: 1,
-    lastVisit: "15/10/2023",
-  },
-  {
-    id: "KH-007",
-    name: "Vo Bao Tran",
-    phone: "0967890123",
-    email: "tranvb@email.com",
-    cccd: "055667788990",
-    bookings: 3,
-    lastVisit: "14/10/2023",
-  },
-  {
-    id: "KH-008",
-    name: "Huynh Gia Han",
-    phone: "0978901234",
-    email: "hanhg@email.com",
-    cccd: "066778899001",
-    bookings: 6,
-    lastVisit: "13/10/2023",
-  },
-  {
-    id: "KH-009",
-    name: "Le Quoc Dat",
-    phone: "0989012345",
-    email: "datlq@email.com",
-    cccd: "077889900112",
-    bookings: 2,
-    lastVisit: "12/10/2023",
-  },
-  {
-    id: "KH-010",
-    name: "Tran Thanh Tung",
-    phone: "0901122334",
-    email: "tungtt@email.com",
-    cccd: "088990011223",
-    bookings: 5,
-    lastVisit: "11/10/2023",
-  },
-  {
-    id: "KH-011",
-    name: "Phan Ngoc Mai",
-    phone: "0911223344",
-    email: "mainp@email.com",
-    cccd: "099001122334",
-    bookings: 2,
-    lastVisit: "10/10/2023",
-  },
-  {
-    id: "KH-012",
-    name: "Bui Khac Huy",
-    phone: "0922334455",
-    email: "huybk@email.com",
-    cccd: "100112233445",
-    bookings: 7,
-    lastVisit: "09/10/2023",
-  },
-];
+const INITIAL_CUSTOMERS: any[] = [];
 
 export default function StaffCustomers() {
   const ITEMS_PER_PAGE = 10;
@@ -128,21 +19,23 @@ export default function StaffCustomers() {
   const [currentCustomer, setCurrentCustomer] = useState<any>(null);
 
   React.useEffect(() => {
-    if (dataService.usingMockData) return;
-
     const loadCustomers = async () => {
-      const result = await dataService.getCustomers();
-      setCustomers(
-        result.map((customer) => ({
-          id: customer.id,
-          name: customer.name,
-          phone: customer.phone,
-          email: customer.email,
-          cccd: customer.cccd,
-          bookings: customer.bookings,
-          lastVisit: customer.lastVisit || "-",
-        })),
-      );
+      try {
+        const result = await dataService.getCustomers();
+        setCustomers(
+          result.map((customer) => ({
+            id: customer.id,
+            name: customer.name,
+            phone: customer.phone,
+            email: customer.email,
+            cccd: customer.cccd,
+            bookings: customer.bookings,
+            lastVisit: customer.lastVisit || "-",
+          })),
+        );
+      } catch {
+        setCustomers([]);
+      }
     };
 
     void loadCustomers();
@@ -151,7 +44,9 @@ export default function StaffCustomers() {
   const filteredCustomers = useMemo(() => {
     return customers.filter((customer) => {
       return (
-        customer.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (customer.email || "")
+          .toLowerCase()
+          .includes(searchTerm.toLowerCase()) ||
         customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         customer.phone.includes(searchTerm) ||
         customer.cccd.includes(searchTerm)
@@ -193,20 +88,27 @@ export default function StaffCustomers() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (modalMode === "add") {
-      await dataService.createCustomer({
+      const created = await dataService.createCustomer({
         name: currentCustomer.name,
         phone: currentCustomer.phone,
         email: currentCustomer.email,
         cccd: currentCustomer.cccd,
         lastVisit: "-",
       });
-      const newId = `KH-00${customers.length + 1}`;
       setCustomers([
-        { ...currentCustomer, id: newId, bookings: 0, lastVisit: "-" },
+        {
+          id: created.id,
+          name: created.name,
+          phone: created.phone,
+          email: created.email,
+          cccd: created.cccd,
+          bookings: created.bookings,
+          lastVisit: created.lastVisit || "-",
+        },
         ...customers,
       ]);
     } else {
-      await dataService.updateCustomer(currentCustomer.id, {
+      const updated = await dataService.updateCustomer(currentCustomer.id, {
         name: currentCustomer.name,
         phone: currentCustomer.phone,
         email: currentCustomer.email,
@@ -214,7 +116,18 @@ export default function StaffCustomers() {
       });
       setCustomers(
         customers.map((c) =>
-          c.id === currentCustomer.id ? currentCustomer : c,
+          c.id === currentCustomer.id
+            ? {
+                ...c,
+                id: updated.id,
+                name: updated.name,
+                phone: updated.phone,
+                email: updated.email,
+                cccd: updated.cccd,
+                bookings: updated.bookings,
+                lastVisit: updated.lastVisit || c.lastVisit,
+              }
+            : c,
         ),
       );
     }
@@ -250,7 +163,7 @@ export default function StaffCustomers() {
             />
             <input
               type="text"
-              placeholder="Tìm tên, SĐT, CCCD, Mã KH..."
+              placeholder="Tìm tên, SĐT, CCCD, email..."
               className="input-field pl-10 py-2 text-sm"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -264,7 +177,7 @@ export default function StaffCustomers() {
             <table className="w-full text-left border-collapse whitespace-nowrap">
               <thead className="sticky top-0 bg-bg-card z-10">
                 <tr className="border-b border-border-subtle text-text-muted text-xs uppercase tracking-wider">
-                  <th className="p-4 font-medium">Mã KH</th>
+                  <th className="p-4 font-medium">Email KH</th>
                   <th className="p-4 font-medium">Khách hàng</th>
                   <th className="p-4 font-medium">Liên hệ</th>
                   <th className="p-4 font-medium">CCCD/Passport</th>
@@ -288,7 +201,7 @@ export default function StaffCustomers() {
                     >
                       <td className="p-4">
                         <span className="font-mono text-accent-neon bg-accent-neon/10 px-2 py-1 rounded">
-                          {customer.id}
+                          {customer.email || "-"}
                         </span>
                       </td>
                       <td className="p-4 font-bold text-text-primary">

@@ -15,6 +15,8 @@ import {
   ChevronUp,
 } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
+import { ApiError } from "@/lib/api-client";
+import type { RoomAvailabilityDayRecord } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 import { dataService } from "@/lib/data-service";
 import type { Room } from "@/lib/mock-data";
@@ -34,30 +36,36 @@ export default function RoomDetailsPage() {
   const [checkOut, setCheckOut] = useState("");
   const [paymentAmount, setPaymentAmount] = useState("30");
   const [paymentMethod, setPaymentMethod] = useState("bank");
+  const [customerName, setCustomerName] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerIdNumber, setCustomerIdNumber] = useState("");
   const [showRecentHistory, setShowRecentHistory] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [createdBookingId, setCreatedBookingId] = useState("");
+  const [qrUrl, setQrUrl] = useState("");
+  const [qrAmount, setQrAmount] = useState(0);
+  const [qrTransferContent, setQrTransferContent] = useState("");
+  const [qrExpiresAt, setQrExpiresAt] = useState("");
+  const [qrBankBin, setQrBankBin] = useState("");
+  const [qrBankAccountNo, setQrBankAccountNo] = useState("");
+  const [qrBankAccountName, setQrBankAccountName] = useState("");
+  const [secondsLeft, setSecondsLeft] = useState(0);
+  const [isQrExpired, setIsQrExpired] = useState(false);
+  const [isRefreshingQr, setIsRefreshingQr] = useState(false);
 
   const [bookingType, setBookingType] = useState<"day" | "hour">("day");
-  const [checkInTime, setCheckInTime] = useState("14:00");
-  const [checkOutTime, setCheckOutTime] = useState("12:00");
+  const [checkInTime, setCheckInTime] = useState("");
+  const [checkOutTime, setCheckOutTime] = useState("");
 
   // 1: Chọn phòng, 2: Xác nhận, 3: Hoàn tất
   const [step, setStep] = useState(1);
 
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
-
-  // Mock schedule for the room (10 days)
-  const roomSchedule = Array.from({ length: 10 }).map((_, i) => {
-    const date = new Date();
-    date.setDate(date.getDate() + i);
-    return {
-      date: date.toLocaleDateString("vi-VN"),
-      time: i % 3 === 0 ? "14:00 - 18:00" : i % 4 === 0 ? "Cả ngày" : "Trống",
-      status: i % 3 === 0 || i % 4 === 0 ? "booked" : "available",
-    };
-  });
+  const [roomSchedule, setRoomSchedule] = useState<RoomAvailabilityDayRecord[]>(
+    [],
+  );
+  const [isLoadingSchedule, setIsLoadingSchedule] = useState(false);
 
   useEffect(() => {
     const loadRoom = async () => {
@@ -69,6 +77,131 @@ export default function RoomDetailsPage() {
 
     void loadRoom();
   }, [roomId]);
+
+  useEffect(() => {
+    const loadAvailability = async () => {
+      if (!isScheduleModalOpen || !roomId) return;
+
+      try {
+        setIsLoadingSchedule(true);
+        const schedule = await dataService.getRoomAvailability(roomId, 6);
+        setRoomSchedule(schedule);
+      } catch {
+        warning("Không thể tải lịch trống. Vui lòng thử lại.");
+        setRoomSchedule([]);
+      } finally {
+        setIsLoadingSchedule(false);
+      }
+    };
+
+    void loadAvailability();
+  }, [isScheduleModalOpen, roomId, warning]);
+
+  useEffect(() => {
+    if (!qrExpiresAt) {
+      setSecondsLeft(0);
+      setIsQrExpired(false);
+      return;
+    }
+
+    const updateCountdown = () => {
+      const remaining = Math.max(
+        0,
+        Math.floor((new Date(qrExpiresAt).getTime() - Date.now()) / 1000),
+      );
+      setSecondsLeft(remaining);
+      setIsQrExpired(remaining <= 0);
+    };
+
+    updateCountdown();
+    const timer = window.setInterval(updateCountdown, 1000);
+    return () => window.clearInterval(timer);
+  }, [qrExpiresAt]);
+
+  const formatCountdown = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+      .toString()
+      .padStart(2, "0");
+    const secs = (seconds % 60).toString().padStart(2, "0");
+    return `${mins}:${secs}`;
+  };
+
+  const applyQrInfo = (
+    info: {
+      paymentQrUrl?: string;
+      payAmountVnd?: number;
+      transferContent?: string;
+      paymentExpiresAt?: string;
+      bankBin?: string;
+      bankAccountNo?: string;
+      bankAccountName?: string;
+    },
+    fallbackAmount: number,
+    fallbackContent: string,
+  ) => {
+    setQrUrl(info.paymentQrUrl || "");
+    setQrAmount(info.payAmountVnd ?? fallbackAmount);
+    setQrTransferContent(info.transferContent || fallbackContent);
+    setQrBankBin(info.bankBin || "");
+    setQrBankAccountNo(info.bankAccountNo || "");
+    setQrBankAccountName(info.bankAccountName || "");
+    setQrExpiresAt(
+      info.paymentExpiresAt ||
+        new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    );
+    setIsQrExpired(false);
+  };
+
+  const fetchPaymentQr = async (bookingId: string, isRefresh = false) => {
+    if (!bookingId) return;
+
+    if (isRefresh) {
+      setIsRefreshingQr(true);
+    }
+
+    try {
+      const qrInfo = isRefresh
+        ? await dataService.refreshBookingPaymentQr(bookingId)
+        : await dataService.getBookingPaymentQr(bookingId);
+      applyQrInfo(
+        qrInfo,
+        totalToPay,
+        `Khach Hang dat phong ${room?.name || "ROOM"}`,
+      );
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 410) {
+        setIsQrExpired(true);
+        warning("Mã QR đã hết hạn. Vui lòng bấm 'Tạo lại QR'.");
+      } else {
+        warning("Không thể tải mã QR thanh toán. Vui lòng thử lại.");
+      }
+    } finally {
+      if (isRefresh) {
+        setIsRefreshingQr(false);
+      }
+    }
+  };
+
+  const getHourlyDurationInHours = () => {
+    if (!checkIn || !checkOut || !checkInTime || !checkOutTime) {
+      return null;
+    }
+
+    const checkInDateTime = new Date(`${checkIn}T${checkInTime}`);
+    const checkOutDateTime = new Date(`${checkOut}T${checkOutTime}`);
+
+    if (
+      Number.isNaN(checkInDateTime.getTime()) ||
+      Number.isNaN(checkOutDateTime.getTime())
+    ) {
+      return null;
+    }
+
+    return (
+      (checkOutDateTime.getTime() - checkInDateTime.getTime()) /
+      (1000 * 60 * 60)
+    );
+  };
 
   const validateBookingDateTime = () => {
     if (!checkIn || !checkOut) {
@@ -101,13 +234,28 @@ export default function RoomDetailsPage() {
     }
 
     if (bookingType === "hour") {
-      const t1 = new Date(`2000-01-01T${checkInTime}`);
-      const t2 = new Date(`2000-01-01T${checkOutTime}`);
-      let hours = (t2.getTime() - t1.getTime()) / (1000 * 60 * 60);
-      if (hours <= 0) hours += 24;
+      if (!checkInTime || !checkOutTime) {
+        warning("Vui lòng chọn giờ nhận và giờ trả phòng!");
+        return false;
+      }
 
-      if (hours <= 0) {
-        warning("Khung giờ đặt phòng không hợp lệ.");
+      const durationHours = getHourlyDurationInHours();
+      if (durationHours === null) {
+        warning("Giờ nhận/trả phòng không hợp lệ.");
+        return false;
+      }
+
+      if (durationHours === 0) {
+        warning(
+          "Giờ nhận và giờ trả đang trùng nhau. Vui lòng chọn giờ trả muộn hơn giờ nhận.",
+        );
+        return false;
+      }
+
+      if (durationHours < 0) {
+        warning(
+          "Thời gian trả phải sau thời gian nhận. Nếu muốn qua ngày, hãy chọn ngày trả lớn hơn ngày nhận.",
+        );
         return false;
       }
     }
@@ -132,18 +280,29 @@ export default function RoomDetailsPage() {
 
   const calculateTotalPrice = () => {
     if (!room) return 0;
+
     if (bookingType === "hour") {
-      // Simple calculation: 1 hour minimum
-      const t1 = new Date(`2000-01-01T${checkInTime}`);
-      const t2 = new Date(`2000-01-01T${checkOutTime}`);
-      let hours = (t2.getTime() - t1.getTime()) / (1000 * 60 * 60);
-      if (hours <= 0) hours += 24; // next day
+      const durationHours = getHourlyDurationInHours();
+      if (durationHours === null || durationHours <= 0) {
+        return 0;
+      }
+
       return (
-        (room.pricePerHour || Math.round(room.price / 4)) * Math.ceil(hours)
+        (room.pricePerHour || Math.round(room.price / 4)) *
+        Math.ceil(durationHours)
       );
     } else {
+      if (!checkIn || !checkOut) {
+        return 0;
+      }
+
       const d1 = new Date(checkIn);
       const d2 = new Date(checkOut);
+
+      if (Number.isNaN(d1.getTime()) || Number.isNaN(d2.getTime())) {
+        return 0;
+      }
+
       let days = (d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24);
       if (days <= 0) days = 1;
       return room.price * days;
@@ -160,7 +319,23 @@ export default function RoomDetailsPage() {
     }
 
     if (!customerPhone.trim() || !customerIdNumber.trim()) {
-      warning("Vui lòng nhập đầy đủ số điện thoại và CCCD.");
+      warning("Vui lòng nhập đầy đủ thông tin khách hàng.");
+      return;
+    }
+
+    if (!customerName.trim()) {
+      warning("Vui lòng nhập họ và tên khách hàng.");
+      return;
+    }
+
+    if (!customerEmail.trim()) {
+      warning("Vui lòng nhập email khách hàng.");
+      return;
+    }
+
+    const normalizedEmail = customerEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      warning("Email khách hàng không hợp lệ.");
       return;
     }
 
@@ -178,14 +353,21 @@ export default function RoomDetailsPage() {
     }
 
     const totalPrice = calculateTotalPrice();
+    if (totalPrice <= 0) {
+      warning("Vui lòng kiểm tra lại ngày/giờ nhận trả để tạm tính hợp lệ.");
+      return;
+    }
+
     const totalToPay = paymentAmount === "30" ? totalPrice * 0.3 : totalPrice;
 
     setIsSubmitting(true);
     try {
-      await dataService.createBooking({
+      const createdBooking = await dataService.createBooking({
         roomId: room.id,
         roomName: room.name,
         userId: user.email,
+        customerName: customerName.trim(),
+        customerEmail: normalizedEmail,
         customerPhone: normalizedPhone,
         customerIdNumber: normalizedIdNumber,
         checkIn,
@@ -201,7 +383,29 @@ export default function RoomDetailsPage() {
         createdAt: new Date().toISOString(),
       });
 
+      setCreatedBookingId(createdBooking.id);
+
+      if (paymentMethod === "bank") {
+        applyQrInfo(
+          {
+            paymentQrUrl: createdBooking.paymentQrUrl,
+            payAmountVnd: createdBooking.payAmountVnd,
+            transferContent: createdBooking.transferContent,
+            paymentExpiresAt: createdBooking.paymentExpiresAt,
+          },
+          totalToPay,
+          `${customerName.trim()} dat phong ${room.name}`,
+        );
+        await fetchPaymentQr(createdBooking.id);
+      }
+
       setStep(3);
+    } catch (submitError) {
+      if (submitError instanceof ApiError) {
+        warning(submitError.message || "Dat phong that bai");
+      } else {
+        warning("Dat phong that bai. Vui long thu lai.");
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -326,9 +530,6 @@ export default function RoomDetailsPage() {
 
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-3 mb-6 mt-8">
                 <div>
-                  <div className="text-accent-primary font-mono mb-2">
-                    {room.id}
-                  </div>
                   <h1 className="text-3xl md:text-5xl text-text-primary leading-tight">
                     {room.name}
                   </h1>
@@ -338,6 +539,12 @@ export default function RoomDetailsPage() {
                     {room.price.toLocaleString("vi-VN")}đ
                   </div>
                   <div className="text-text-muted">/ đêm</div>
+                  <div className="text-text-secondary mt-1">
+                    {(
+                      room.pricePerHour || Math.round(room.price / 4)
+                    ).toLocaleString("vi-VN")}
+                    đ/giờ
+                  </div>
                 </div>
               </div>
 
@@ -399,10 +606,10 @@ export default function RoomDetailsPage() {
                   Đặt phòng này
                 </h3>
 
-                {room.status === "full" ? (
+                {room.status === "maintenance" ? (
                   <div className="bg-danger/10 border border-danger/30 text-danger p-4 rounded-xl text-center font-medium">
-                    Phòng này hiện đã được đặt kín. Vui lòng chọn phòng khác
-                    hoặc ngày khác.
+                    Phòng này đang bảo trì. Vui lòng xem chi tiết hoặc chọn
+                    phòng khác.
                   </div>
                 ) : (
                   <form onSubmit={handleNextStep} className="space-y-6">
@@ -536,7 +743,7 @@ export default function RoomDetailsPage() {
                     className="w-full btn-outline py-3 flex items-center justify-center gap-2"
                   >
                     <Calendar size={18} />
-                    Xem lịch trống (10 ngày tới)
+                    Xem lịch trống (6 ngày tới)
                   </button>
                 </div>
               </div>
@@ -556,19 +763,29 @@ export default function RoomDetailsPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs text-text-muted font-bold mb-1 uppercase tracking-wider">
-                        Họ và tên
+                        Họ và tên *
                       </label>
-                      <div className="text-text-primary bg-bg-primary px-4 py-3 rounded-lg border border-border-subtle">
-                        {user?.name}
-                      </div>
+                      <input
+                        type="text"
+                        className="input-field bg-bg-primary"
+                        placeholder="Nhập họ và tên khách hàng"
+                        value={customerName}
+                        onChange={(e) => setCustomerName(e.target.value)}
+                        required
+                      />
                     </div>
                     <div>
                       <label className="block text-xs text-text-muted font-bold mb-1 uppercase tracking-wider">
-                        Email
+                        Email *
                       </label>
-                      <div className="text-text-primary bg-bg-primary px-4 py-3 rounded-lg border border-border-subtle">
-                        {user?.email}
-                      </div>
+                      <input
+                        type="email"
+                        className="input-field bg-bg-primary"
+                        placeholder="Nhập email khách hàng"
+                        value={customerEmail}
+                        onChange={(e) => setCustomerEmail(e.target.value)}
+                        required
+                      />
                     </div>
                     <div>
                       <label className="block text-xs text-text-muted font-bold mb-1 uppercase tracking-wider">
@@ -663,21 +880,6 @@ export default function RoomDetailsPage() {
                             Chuyển khoản ngân hàng (QR Code)
                           </span>
                         </label>
-                        <label
-                          className={`flex items-center gap-3 cursor-pointer bg-bg-primary px-4 py-4 rounded-xl border transition-colors ${paymentMethod === "counter" ? "border-accent-primary" : "border-border-subtle"}`}
-                        >
-                          <input
-                            type="radio"
-                            name="paymentMethod"
-                            value="counter"
-                            checked={paymentMethod === "counter"}
-                            onChange={(e) => setPaymentMethod(e.target.value)}
-                            className="accent-accent-primary w-4 h-4"
-                          />
-                          <span className="text-text-primary font-medium">
-                            Thanh toán tại quầy
-                          </span>
-                        </label>
                       </div>
                     </div>
                   </div>
@@ -713,9 +915,6 @@ export default function RoomDetailsPage() {
                       className="w-20 h-20 object-cover rounded-lg"
                     />
                     <div>
-                      <div className="text-xs text-accent-primary font-mono mb-1">
-                        {room.id}
-                      </div>
                       <div className="text-text-primary font-bold">
                         {room.name}
                       </div>
@@ -727,11 +926,11 @@ export default function RoomDetailsPage() {
                       <span className="text-text-muted">Nhận phòng</span>
                       <div className="text-right">
                         <div className="text-text-primary font-bold bg-bg-primary px-3 py-1 rounded border border-border-subtle inline-block">
-                          {checkIn}
+                          {checkIn || "--/--/----"}
                         </div>
                         {bookingType === "hour" && (
                           <div className="text-xs text-text-muted mt-1">
-                            {checkInTime}
+                            {checkInTime || "--:--"}
                           </div>
                         )}
                       </div>
@@ -740,11 +939,11 @@ export default function RoomDetailsPage() {
                       <span className="text-text-muted">Trả phòng</span>
                       <div className="text-right">
                         <div className="text-text-primary font-bold bg-bg-primary px-3 py-1 rounded border border-border-subtle inline-block">
-                          {checkOut}
+                          {checkOut || "--/--/----"}
                         </div>
                         {bookingType === "hour" && (
                           <div className="text-xs text-text-muted mt-1">
-                            {checkOutTime}
+                            {checkOutTime || "--:--"}
                           </div>
                         )}
                       </div>
@@ -822,9 +1021,7 @@ export default function RoomDetailsPage() {
 
               <div className="flex flex-wrap justify-center gap-2 mb-5">
                 <span className="px-3 py-1 rounded-full text-xs font-bold bg-accent-neon/12 text-accent-neon border border-accent-neon/20 uppercase">
-                  {paymentMethod === "bank"
-                    ? "Chuyển khoản"
-                    : "Thanh toán tại quầy"}
+                  Chuyển khoản
                 </span>
                 <span className="px-3 py-1 rounded-full text-xs font-bold bg-accent-primary/12 text-accent-primary border border-accent-primary/20 uppercase">
                   {paymentAmount === "30" ? "Cọc 30%" : "Thanh toán 100%"}
@@ -839,7 +1036,10 @@ export default function RoomDetailsPage() {
                   </h3>
                   <div className="w-40 h-40 md:w-48 md:h-48 bg-white mx-auto rounded-lg flex items-center justify-center mb-4">
                     <img
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=ChuyenKhoanGenZCinema_${totalToPay}`}
+                      src={
+                        qrUrl ||
+                        `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=ChuyenKhoanGenZCinema_${totalToPay}`
+                      }
                       alt="QR Code"
                       className="w-full h-full object-contain p-2"
                     />
@@ -847,28 +1047,56 @@ export default function RoomDetailsPage() {
                   <div className="text-left text-sm text-text-secondary space-y-2">
                     <p>
                       Ngân hàng:{" "}
-                      <strong className="text-text-primary">MB Bank</strong>
+                      <strong className="text-text-primary">
+                        {qrBankBin || "970422"}
+                      </strong>
                     </p>
                     <p>
                       STK:{" "}
-                      <strong className="text-text-primary">0901234567</strong>
+                      <strong className="text-text-primary">
+                        {qrBankAccountNo || "123456789"}
+                      </strong>
                     </p>
                     <p>
                       Chủ TK:{" "}
-                      <strong className="text-text-primary">GENZ CINEMA</strong>
+                      <strong className="text-text-primary">
+                        {qrBankAccountName || "GENZ CINEMA"}
+                      </strong>
                     </p>
                     <p>
                       Số tiền:{" "}
                       <strong className="text-accent-gold">
-                        {totalToPay.toLocaleString("vi-VN")}đ
+                        {(qrAmount || totalToPay).toLocaleString("vi-VN")}đ
                       </strong>
                     </p>
                     <p>
                       Nội dung:{" "}
                       <strong className="text-text-primary">
-                        {user?.name} dat phong {room.id}
+                        {qrTransferContent ||
+                          `Khach Hang dat phong ${room.name}`}
                       </strong>
                     </p>
+                    <p>
+                      Hết hạn sau:{" "}
+                      <strong
+                        className={
+                          isQrExpired ? "text-danger" : "text-accent-neon"
+                        }
+                      >
+                        {formatCountdown(secondsLeft)}
+                      </strong>
+                    </p>
+                    {isQrExpired && (
+                      <button
+                        onClick={() =>
+                          void fetchPaymentQr(createdBookingId, true)
+                        }
+                        disabled={isRefreshingQr || !createdBookingId}
+                        className="btn-outline w-full mt-3"
+                      >
+                        {isRefreshingQr ? "ĐANG TẠO LẠI QR..." : "Tạo lại QR"}
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
@@ -957,7 +1185,7 @@ export default function RoomDetailsPage() {
         )}
       </div>
 
-      {step === 1 && room.status !== "full" && (
+      {step === 1 && room.status !== "maintenance" && (
         <div className="lg:hidden fixed bottom-0 left-0 right-0 z-[85] bg-bg-secondary/95 backdrop-blur-xl border-t border-border-subtle px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -1010,7 +1238,7 @@ export default function RoomDetailsPage() {
             <div className="flex items-center justify-between mb-4 border-b border-border-subtle pb-4">
               <h3 className="text-xl font-display text-text-primary flex items-center gap-2">
                 <Calendar size={24} className="text-accent-primary" />
-                Lịch trống 10 ngày tới
+                Lịch trống 6 ngày tới
               </h3>
               <button
                 onClick={() => setIsScheduleModalOpen(false)}
@@ -1021,28 +1249,48 @@ export default function RoomDetailsPage() {
             </div>
 
             <div className="overflow-y-auto flex-1 pr-2 space-y-3">
-              {roomSchedule.map((schedule, idx) => (
-                <div
-                  key={idx}
-                  className="flex justify-between items-center text-sm bg-bg-primary p-4 rounded-xl border border-border-subtle"
-                >
-                  <div>
-                    <span className="text-text-primary font-bold block text-base mb-1">
-                      {schedule.date}
-                    </span>
-                    <span className="text-text-secondary">{schedule.time}</span>
-                  </div>
-                  {schedule.status === "booked" ? (
-                    <span className="text-xs font-bold px-3 py-1.5 bg-danger/10 text-danger rounded-md uppercase">
-                      Đã đặt
-                    </span>
-                  ) : (
-                    <span className="text-xs font-bold px-3 py-1.5 bg-success/10 text-success rounded-md uppercase">
-                      Trống
-                    </span>
-                  )}
+              {isLoadingSchedule ? (
+                <div className="text-sm text-text-secondary bg-bg-primary p-4 rounded-xl border border-border-subtle">
+                  Đang tải lịch trống...
                 </div>
-              ))}
+              ) : roomSchedule.length === 0 ? (
+                <div className="text-sm text-text-secondary bg-bg-primary p-4 rounded-xl border border-border-subtle">
+                  Chưa có dữ liệu lịch trống.
+                </div>
+              ) : (
+                roomSchedule.map((schedule) => (
+                  <div
+                    key={schedule.date}
+                    className="flex justify-between items-center text-sm bg-bg-primary p-4 rounded-xl border border-border-subtle"
+                  >
+                    <div>
+                      <span className="text-text-primary font-bold block text-base mb-1">
+                        {new Date(schedule.date).toLocaleDateString("vi-VN")}
+                      </span>
+                      {schedule.booked ? (
+                        <div className="text-text-secondary space-y-0.5">
+                          <div>Đã đặt: {schedule.bookedRanges.join(" | ")}</div>
+                          <div className="font-semibold text-warning">
+                            Trống từ {schedule.availableFrom} (đã cộng 20p dọn
+                            phòng)
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-success">Trống cả ngày</span>
+                      )}
+                    </div>
+                    {schedule.booked ? (
+                      <span className="text-xs font-bold px-3 py-1.5 bg-danger/10 text-danger rounded-md uppercase">
+                        Đã đặt
+                      </span>
+                    ) : (
+                      <span className="text-xs font-bold px-3 py-1.5 bg-success/10 text-success rounded-md uppercase">
+                        Trống
+                      </span>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
