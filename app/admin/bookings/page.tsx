@@ -36,7 +36,32 @@ export default function AdminBookings() {
   const [updatingPaymentBookingId, setUpdatingPaymentBookingId] = useState<
     string | null
   >(null);
-  const { confirm, success, error } = useToast();
+  const { confirm, success, error, warning } = useToast();
+
+  const parseLocalDate = (value: string) => new Date(`${value}T00:00:00`);
+
+  const formatBookingDateTime = (
+    date: string,
+    time?: string,
+    bookingType?: Booking["bookingType"],
+  ) => {
+    if (!date) return "-";
+
+    const localDate = parseLocalDate(date);
+    if (bookingType === "hour" && time) {
+      return `${localDate.toLocaleDateString("vi-VN")} ${time}`;
+    }
+
+    return localDate.toLocaleDateString("vi-VN");
+  };
+
+  const getRefundLabel = (booking: Booking) => {
+    if (booking.status !== "cancelled") return null;
+    if (booking.refundStatus === "refunded") return "Đã hoàn tiền";
+    if (booking.refundStatus === "eligible") return "Hủy được hoàn tiền";
+    if (booking.refundStatus === "ineligible") return "Hủy không hoàn tiền";
+    return "Không áp dụng";
+  };
 
   const mapFilterToExportStatus = (filterValue: string) => {
     const statusMap: Record<string, string | undefined> = {
@@ -124,12 +149,17 @@ export default function AdminBookings() {
 
   useEffect(() => {
     const loadBookings = async () => {
-      const result = await dataService.getBookings();
-      setBookings(result);
+      try {
+        const result = await dataService.getBookings();
+        setBookings(result);
+      } catch (loadError) {
+        console.error(loadError);
+        error("Không thể tải danh sách đặt phòng");
+      }
     };
 
     void loadBookings();
-  }, []);
+  }, [error]);
 
   const handleDeleteBooking = async (id: string) => {
     const target = bookings.find((booking) => booking.id === id);
@@ -141,16 +171,27 @@ export default function AdminBookings() {
       { confirmLabel: "Xóa", cancelLabel: "Hủy" },
     );
     if (shouldDelete) {
-      await dataService.deleteBooking(id);
-      setBookings(bookings.filter((b) => b.id !== id));
-      success(`Đã xóa đặt phòng ${displayName}.`);
+      try {
+        await dataService.deleteBooking(id);
+        setBookings(bookings.filter((b) => b.id !== id));
+        success(`Đã xóa đặt phòng ${displayName}.`);
+      } catch (deleteError) {
+        console.error(deleteError);
+        error("Xóa đặt phòng thất bại");
+      }
     }
   };
 
   const handleStatusChange = async (id: string, newStatus: string) => {
-    await dataService.updateBookingStatus(id, newStatus as BookingStatus);
-    const result = await dataService.getBookings();
-    setBookings(result);
+    try {
+      await dataService.updateBookingStatus(id, newStatus as BookingStatus);
+      const result = await dataService.getBookings();
+      setBookings(result);
+      success("Đã cập nhật trạng thái đặt phòng.");
+    } catch (statusError) {
+      console.error(statusError);
+      error("Cập nhật trạng thái đặt phòng thất bại");
+    }
   };
 
   const handlePaymentStatusChange = async (
@@ -159,6 +200,7 @@ export default function AdminBookings() {
   ) => {
     const target = bookings.find((booking) => booking.id === id);
     if (target && getDisplayStatus(target) === "cancelled") {
+      warning("Booking đã hủy không thể thay đổi trạng thái thanh toán.");
       return;
     }
 
@@ -276,7 +318,7 @@ export default function AdminBookings() {
               />
               <input
                 type="text"
-                placeholder="Email, tên khách, phòng, SĐT..."
+                placeholder="Tên khách, phòng, SĐT..."
                 className="input-field pl-10 py-2 text-sm"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -337,8 +379,8 @@ export default function AdminBookings() {
             <table className="w-full text-left border-collapse whitespace-nowrap">
               <thead className="sticky top-0 bg-bg-card z-10">
                 <tr className="border-b border-border-subtle text-text-muted text-xs uppercase tracking-wider">
-                  <th className="p-4 font-medium">Email</th>
                   <th className="p-4 font-medium">Tên khách hàng</th>
+                  <th className="p-4 font-medium">Số điện thoại</th>
                   <th className="p-4 font-medium">Phòng</th>
                   <th className="p-4 font-medium">Check-in / Check-out</th>
                   <th className="p-4 font-medium">Tổng tiền</th>
@@ -352,10 +394,7 @@ export default function AdminBookings() {
               <tbody className="text-sm">
                 {filteredBookings.length === 0 ? (
                   <tr>
-                    <td
-                      colSpan={10}
-                      className="p-8 text-center text-text-muted"
-                    >
+                    <td colSpan={9} className="p-8 text-center text-text-muted">
                       Không tìm thấy đặt phòng nào phù hợp.
                     </td>
                   </tr>
@@ -365,27 +404,29 @@ export default function AdminBookings() {
                       key={booking.id}
                       className="border-b border-border-subtle/50 hover:bg-bg-secondary/50 transition-colors group"
                     >
-                      <td className="p-4">
-                        <div className="font-mono text-text-primary">
-                          {booking.userId}
-                        </div>
-                      </td>
                       <td className="p-4 font-bold text-text-primary">
                         {getCustomerName(booking)}
+                      </td>
+                      <td className="p-4 text-text-secondary font-mono">
+                        {booking.customerPhone || "-"}
                       </td>
                       <td className="p-4 font-mono text-text-secondary">
                         {booking.roomName}
                       </td>
                       <td className="p-4">
                         <div className="text-text-primary">
-                          {new Date(booking.checkIn).toLocaleDateString(
-                            "vi-VN",
+                          {formatBookingDateTime(
+                            booking.checkIn,
+                            booking.checkInTime,
+                            booking.bookingType,
                           )}
                         </div>
                         <div className="text-xs text-text-muted">
                           đến{" "}
-                          {new Date(booking.checkOut).toLocaleDateString(
-                            "vi-VN",
+                          {formatBookingDateTime(
+                            booking.checkOut,
+                            booking.checkOutTime,
+                            booking.bookingType,
                           )}
                         </div>
                       </td>
@@ -440,15 +481,9 @@ export default function AdminBookings() {
                         </div>
                       </td>
                       <td className="p-4">
-                        {getDisplayStatus(booking) === "cancelled" ? (
+                        {getRefundLabel(booking) ? (
                           <span className="px-2 py-1 rounded text-xs font-bold uppercase bg-bg-primary border border-border-subtle text-text-secondary">
-                            {booking.refundStatus === "eligible"
-                              ? "Hủy được hoàn tiền"
-                              : booking.refundStatus === "ineligible"
-                                ? "Hủy không hoàn tiền"
-                                : booking.refundStatus === "refunded"
-                                  ? "Đã hoàn tiền"
-                                  : "Không áp dụng"}
+                            {getRefundLabel(booking)}
                           </span>
                         ) : (
                           <span className="text-xs text-text-muted">-</span>

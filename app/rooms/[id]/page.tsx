@@ -42,6 +42,7 @@ export default function RoomDetailsPage() {
   const [customerIdNumber, setCustomerIdNumber] = useState("");
   const [showRecentHistory, setShowRecentHistory] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCheckingAvailability, setIsCheckingAvailability] = useState(false);
   const [createdBookingId, setCreatedBookingId] = useState("");
   const [qrUrl, setQrUrl] = useState("");
   const [qrAmount, setQrAmount] = useState(0);
@@ -66,6 +67,10 @@ export default function RoomDetailsPage() {
     [],
   );
   const [isLoadingSchedule, setIsLoadingSchedule] = useState(false);
+
+  const scheduleWithFreeRanges = roomSchedule.filter(
+    (schedule) => schedule.availableRanges.length > 0,
+  );
 
   useEffect(() => {
     const loadRoom = async () => {
@@ -124,6 +129,68 @@ export default function RoomDetailsPage() {
       .padStart(2, "0");
     const secs = (seconds % 60).toString().padStart(2, "0");
     return `${mins}:${secs}`;
+  };
+
+  const parseLocalDate = (value: string) => new Date(`${value}T00:00:00`);
+
+  const getTodayDate = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today;
+  };
+
+  const getAvailabilityDaysToFetch = () => {
+    const today = getTodayDate();
+    const endDate = parseLocalDate(checkOut);
+    const diffDays = Math.floor(
+      (endDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+    );
+    return Math.min(Math.max(diffDays + 1, 1), 14);
+  };
+
+  const findAvailabilityConflict = (
+    schedule: RoomAvailabilityDayRecord[],
+  ): RoomAvailabilityDayRecord | undefined => {
+    const startDate = parseLocalDate(checkIn);
+    const endDate = parseLocalDate(checkOut);
+
+    return schedule.find((entry) => {
+      const entryDate = parseLocalDate(entry.date);
+      return entry.booked && entryDate >= startDate && entryDate <= endDate;
+    });
+  };
+
+  const checkAvailabilityBeforeContinue = async () => {
+    if (!roomId) {
+      warning("Không thể kiểm tra lịch trống của phòng này.");
+      return false;
+    }
+
+    try {
+      setIsCheckingAvailability(true);
+      const schedule = await dataService.getRoomAvailability(
+        roomId,
+        getAvailabilityDaysToFetch(),
+      );
+      const conflict = findAvailabilityConflict(schedule);
+
+      if (conflict) {
+        const bookedRanges = conflict.bookedRanges?.length
+          ? conflict.bookedRanges.join(" | ")
+          : "Đã có lịch đặt";
+        warning(
+          `Phòng đã có người đặt ngày ${parseLocalDate(conflict.date).toLocaleDateString("vi-VN")}: ${bookedRanges}`,
+        );
+        return false;
+      }
+
+      return true;
+    } catch {
+      warning("Không thể kiểm tra lịch trống. Vui lòng thử lại.");
+      return false;
+    } finally {
+      setIsCheckingAvailability(false);
+    }
   };
 
   const applyQrInfo = (
@@ -209,11 +276,9 @@ export default function RoomDetailsPage() {
       return false;
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const checkInDate = new Date(checkIn);
-    const checkOutDate = new Date(checkOut);
+    const today = getTodayDate();
+    const checkInDate = parseLocalDate(checkIn);
+    const checkOutDate = parseLocalDate(checkOut);
 
     if (checkInDate < today) {
       warning("Ngày nhận phòng không được ở quá khứ.");
@@ -263,7 +328,7 @@ export default function RoomDetailsPage() {
     return true;
   };
 
-  const handleNextStep = (e: React.FormEvent) => {
+  const handleNextStep = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) {
       warning("Vui lòng đăng nhập để đặt phòng!");
@@ -272,6 +337,11 @@ export default function RoomDetailsPage() {
     }
 
     if (!validateBookingDateTime()) {
+      return;
+    }
+
+    const isAvailable = await checkAvailabilityBeforeContinue();
+    if (!isAvailable) {
       return;
     }
 
@@ -729,9 +799,12 @@ export default function RoomDetailsPage() {
 
                     <button
                       type="submit"
-                      className="btn-primary w-full py-4 text-lg mt-4"
+                      disabled={isCheckingAvailability}
+                      className="btn-primary w-full py-4 text-lg mt-4 disabled:opacity-70 disabled:cursor-not-allowed"
                     >
-                      TIẾP TỤC ĐẶT PHÒNG
+                      {isCheckingAvailability
+                        ? "ĐANG KIỂM TRA LỊCH..."
+                        : "TIẾP TỤC ĐẶT PHÒNG"}
                     </button>
                   </form>
                 )}
@@ -1154,23 +1227,6 @@ export default function RoomDetailsPage() {
                     </p>
                   </div>
                 </div>
-                {/* Mock past booking */}
-                <div className="bg-bg-primary p-4 rounded-xl border border-border-subtle flex gap-4 opacity-70">
-                  <img
-                    src="https://images.unsplash.com/photo-1505691938895-1758d7feb511?q=80&w=2070&auto=format&fit=crop"
-                    alt="Indie Vibe"
-                    className="w-20 h-20 object-cover rounded-lg"
-                  />
-                  <div>
-                    <div className="text-success text-xs font-bold uppercase mb-1">
-                      Đã hoàn thành
-                    </div>
-                    <h4 className="text-text-primary font-bold">Indie Vibe</h4>
-                    <p className="text-text-muted text-sm">
-                      05/09/2023 - 06/09/2023
-                    </p>
-                  </div>
-                </div>
               </div>
               <div className="mt-6 text-center">
                 <Link
@@ -1253,41 +1309,33 @@ export default function RoomDetailsPage() {
                 <div className="text-sm text-text-secondary bg-bg-primary p-4 rounded-xl border border-border-subtle">
                   Đang tải lịch trống...
                 </div>
-              ) : roomSchedule.length === 0 ? (
+              ) : scheduleWithFreeRanges.length === 0 ? (
                 <div className="text-sm text-text-secondary bg-bg-primary p-4 rounded-xl border border-border-subtle">
-                  Chưa có dữ liệu lịch trống.
+                  Không còn khung giờ trống trong 6 ngày tới.
                 </div>
               ) : (
-                roomSchedule.map((schedule) => (
+                scheduleWithFreeRanges.map((schedule) => (
                   <div
                     key={schedule.date}
                     className="flex justify-between items-center text-sm bg-bg-primary p-4 rounded-xl border border-border-subtle"
                   >
                     <div>
                       <span className="text-text-primary font-bold block text-base mb-1">
-                        {new Date(schedule.date).toLocaleDateString("vi-VN")}
+                        {parseLocalDate(schedule.date).toLocaleDateString(
+                          "vi-VN",
+                        )}
                       </span>
-                      {schedule.booked ? (
-                        <div className="text-text-secondary space-y-0.5">
-                          <div>Đã đặt: {schedule.bookedRanges.join(" | ")}</div>
-                          <div className="font-semibold text-warning">
-                            Trống từ {schedule.availableFrom} (đã cộng 20p dọn
-                            phòng)
+                      <div className="text-text-secondary space-y-0.5">
+                        {schedule.availableRanges.map((range) => (
+                          <div key={`${schedule.date}-${range}`}>
+                            Trống: {range}
                           </div>
-                        </div>
-                      ) : (
-                        <span className="text-success">Trống cả ngày</span>
-                      )}
+                        ))}
+                      </div>
                     </div>
-                    {schedule.booked ? (
-                      <span className="text-xs font-bold px-3 py-1.5 bg-danger/10 text-danger rounded-md uppercase">
-                        Đã đặt
-                      </span>
-                    ) : (
-                      <span className="text-xs font-bold px-3 py-1.5 bg-success/10 text-success rounded-md uppercase">
-                        Trống
-                      </span>
-                    )}
+                    <span className="text-xs font-bold px-3 py-1.5 bg-success/10 text-success rounded-md uppercase">
+                      Trống
+                    </span>
                   </div>
                 ))
               )}

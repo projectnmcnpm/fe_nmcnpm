@@ -39,6 +39,7 @@ type RoomAvailabilityDayDto = {
   date?: string;
   booked?: boolean;
   bookedRanges?: string[];
+  availableRanges?: string[];
   availableFrom?: string;
   note?: string;
 };
@@ -228,6 +229,7 @@ export type RoomAvailabilityDayRecord = {
   date: string;
   booked: boolean;
   bookedRanges: string[];
+  availableRanges: string[];
   availableFrom: string;
   note?: string;
 };
@@ -616,6 +618,7 @@ function mapRoomAvailabilityDayDto(dto: RoomAvailabilityDayDto): RoomAvailabilit
     date: dto.date || "",
     booked: Boolean(dto.booked),
     bookedRanges: dto.bookedRanges || [],
+    availableRanges: dto.availableRanges || [],
     availableFrom: dto.availableFrom || "",
     note: dto.note,
   };

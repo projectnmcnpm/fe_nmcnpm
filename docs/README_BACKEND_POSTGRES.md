@@ -1,0 +1,276 @@
+# Huong dan cai dat va chay Backend + PostgreSQL (Spring Boot)
+
+Tai lieu nay huong dan day du cach setup backend Spring Boot, ket noi PostgreSQL, chay migration/schema, seed du lieu va verify API.
+
+## 1) Tong quan
+
+- Backend: Spring Boot (Java 21, Maven)
+- Thu muc backend: backend/Homestay
+- Database: PostgreSQL
+- API port mac dinh: 8080
+- Swagger UI: /swagger-ui/index.html
+- OpenAPI JSON: /v3/api-docs
+
+## 2) Yeu cau moi truong
+
+- Java JDK: 21
+- Maven: co the dung Maven Wrapper kem san (mvnw, mvnw.cmd)
+- PostgreSQL: 14+ (khuyen nghi 15/16)
+
+Kiem tra nhanh:
+
+```powershell
+java -version
+```
+
+## 3) Tao database PostgreSQL
+
+Dang nhap psql:
+
+```powershell
+psql -U postgres
+```
+
+Tao user + database:
+
+```sql
+CREATE USER homestay_user WITH PASSWORD 'homestay_password';
+CREATE DATABASE homestay_db OWNER homestay_user;
+GRANT ALL PRIVILEGES ON DATABASE homestay_db TO homestay_user;
+```
+
+Thoat psql:
+
+```sql
+\q
+```
+
+## 4) Bien moi truong backend can co
+
+Backend dung bien moi truong sau (duoc map trong application.yaml):
+
+- DB_URL
+- DB_USERNAME
+- DB_PASSWORD
+- JWT_SECRET
+- JWT_EXPIRATION_MS
+- JWT_REFRESH_EXPIRATION_DAYS
+- CLOUDINARY_CLOUD_NAME
+- CLOUDINARY_API_KEY
+- CLOUDINARY_API_SECRET
+- APP_SEED_ENABLED
+- APP_ADMIN_EMAIL
+- APP_ADMIN_PASSWORD
+- APP_ADMIN_NAME
+- PAYMENT_QR_BANK_BIN (optional)
+- PAYMENT_QR_ACCOUNT_NO (optional)
+- PAYMENT_QR_ACCOUNT_NAME (optional)
+- PAYMENT_QR_TEMPLATE (optional)
+- PAYMENT_QR_PROVIDER_BASE_URL (optional)
+
+Luu y quan trong:
+
+- Khi APP_SEED_ENABLED=true thi APP_ADMIN_EMAIL va APP_ADMIN_PASSWORD bat buoc phai co, neu khong app se fail startup.
+
+## 5) Mau file env cho local
+
+Co the tao file backend/Homestay/.env de de quan ly, sau do nap vao shell/IDE khi chay app.
+
+Mau:
+
+```env
+DB_URL=jdbc:postgresql://localhost:5432/homestay_db
+DB_USERNAME=homestay_user
+DB_PASSWORD=homestay_password
+
+JWT_SECRET=replace_with_a_very_long_random_secret_key_at_least_32_chars
+JWT_EXPIRATION_MS=3600000
+JWT_REFRESH_EXPIRATION_DAYS=7
+
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
+
+APP_SEED_ENABLED=true
+APP_ADMIN_EMAIL=admin@homestay.local
+APP_ADMIN_PASSWORD=Admin@123456
+APP_ADMIN_NAME=System Admin
+
+PAYMENT_QR_BANK_BIN=970436
+PAYMENT_QR_ACCOUNT_NO=1032756049
+PAYMENT_QR_ACCOUNT_NAME=NGUYEN QUOC TOAN
+PAYMENT_QR_TEMPLATE=compact2
+PAYMENT_QR_PROVIDER_BASE_URL=https://img.vietqr.io/image
+```
+
+## 6) Chay backend tren Windows PowerShell
+
+Di chuyen vao thu muc backend:
+
+```powershell
+cd backend/Homestay
+```
+
+Nap bien moi truong nhanh trong session (vi du):
+
+```powershell
+$env:DB_URL="jdbc:postgresql://localhost:5432/homestay_db"
+$env:DB_USERNAME="homestay_user"
+$env:DB_PASSWORD="homestay_password"
+$env:JWT_SECRET="replace_with_a_very_long_random_secret_key_at_least_32_chars"
+$env:JWT_EXPIRATION_MS="3600000"
+$env:JWT_REFRESH_EXPIRATION_DAYS="7"
+$env:CLOUDINARY_CLOUD_NAME="your_cloud_name"
+$env:CLOUDINARY_API_KEY="your_api_key"
+$env:CLOUDINARY_API_SECRET="your_api_secret"
+$env:APP_SEED_ENABLED="true"
+$env:APP_ADMIN_EMAIL="admin@homestay.local"
+$env:APP_ADMIN_PASSWORD="Admin@123456"
+$env:APP_ADMIN_NAME="System Admin"
+```
+
+Run app bang Maven Wrapper:
+
+```powershell
+.\mvnw.cmd spring-boot:run
+```
+
+Neu da cai Maven system:
+
+```powershell
+mvn spring-boot:run
+```
+
+## 7) Flyway / migration / schema
+
+Hien tai trong application.yaml:
+
+- spring.flyway.enabled: false
+- spring.jpa.hibernate.ddl-auto: validate
+
+Dieu nay co nghia:
+
+- App khong tu chay migration Flyway mac dinh.
+- Hibernate se validate schema ton tai dung cau truc.
+
+2 cach setup schema:
+
+### Cach A: Bat Flyway khi chay (khuyen nghi)
+
+Set them bien:
+
+```powershell
+$env:SPRING_FLYWAY_ENABLED="true"
+```
+
+Sau do chay app. Flyway se ap migration tu:
+
+- src/main/resources/db/migration/V1\_\_initial_schema.sql
+
+### Cach B: Chay SQL migration thu cong
+
+- Mo file V1\_\_initial_schema.sql
+- Execute vao homestay_db bang psql/PGAdmin
+- Chay app voi flyway disabled
+
+## 8) Verify backend da chay dung
+
+Sau khi start thanh cong:
+
+- API: http://localhost:8080
+- Swagger UI: http://localhost:8080/swagger-ui/index.html
+- OpenAPI: http://localhost:8080/v3/api-docs
+
+Kiem tra nhanh bang curl:
+
+```powershell
+curl http://localhost:8080/api/rooms
+```
+
+## 9) Bao mat va phan quyen
+
+Public khong can token:
+
+- /api/auth/\*\*
+- GET /api/rooms
+- GET /api/rooms/{id}
+- /swagger-ui/\*\*
+- /v3/api-docs/\*\*
+
+Cac endpoint con lai can Authorization: Bearer <accessToken>.
+
+Role duoc su dung:
+
+- MANAGER
+- RECEPTIONIST
+- CLEANER
+- CUSTOMER
+
+## 10) Seed tai khoan admin
+
+Khi APP_SEED_ENABLED=true:
+
+- App tu tao tai khoan manager theo APP_ADMIN_EMAIL, APP_ADMIN_PASSWORD, APP_ADMIN_NAME neu chua ton tai.
+- Neu thieu email/password se throw IllegalStateException va dung app.
+
+## 11) Build va test backend
+
+Build:
+
+```powershell
+.\mvnw.cmd clean package
+```
+
+Run test:
+
+```powershell
+.\mvnw.cmd test
+```
+
+## 12) Loi thuong gap va cach khac phuc
+
+### Loi 1: Ket noi Postgres fail
+
+- Kiem tra PostgreSQL service dang chay.
+- Kiem tra DB_URL, DB_USERNAME, DB_PASSWORD.
+- Kiem tra firewall/port 5432.
+
+### Loi 2: JWT secret qua ngan
+
+- JWT_SECRET can du dai (>= 32 ky tu) de tao HMAC key hop le.
+
+### Loi 3: Startup fail vi seed
+
+- Neu APP_SEED_ENABLED=true thi bat buoc khai bao APP_ADMIN_EMAIL va APP_ADMIN_PASSWORD.
+
+### Loi 4: 403 Forbidden
+
+- Token hop le nhung role khong du quyen.
+- Dang nhap lai bang user role phu hop endpoint.
+
+### Loi 5: 400 Validation failed
+
+- Kiem tra request body theo rao buoc @Valid (email format, length, enum value, so dien thoai...).
+
+## 13) Docker (tuy chon) cho PostgreSQL
+
+Neu muon dung Docker cho DB:
+
+```powershell
+docker run --name homestay-postgres -e POSTGRES_USER=homestay_user -e POSTGRES_PASSWORD=homestay_password -e POSTGRES_DB=homestay_db -p 5432:5432 -d postgres:16
+```
+
+Sau do giu nguyen DB_URL:
+
+```env
+DB_URL=jdbc:postgresql://localhost:5432/homestay_db
+```
+
+## 14) Quy trinh setup nhanh de nghi
+
+1. Khoi tao PostgreSQL database + user.
+2. Cau hinh bien moi truong backend.
+3. Bat Flyway (SPRING_FLYWAY_ENABLED=true) hoac apply SQL thu cong.
+4. Chay backend.
+5. Mo Swagger de test.
+6. Chay frontend va dang nhap bang admin seed.

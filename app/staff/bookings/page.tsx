@@ -24,6 +24,9 @@ type StaffBookingRow = {
   room: string;
   checkIn: string;
   checkOut: string;
+  checkInTime?: string;
+  checkOutTime?: string;
+  bookingType?: "day" | "hour";
   total: number;
   deposit: number;
   status: StaffBookingStatusCode;
@@ -78,6 +81,9 @@ const mapToRow = (
     room: booking.roomName || booking.roomId || "-",
     checkIn: toDateLabel(booking.checkIn),
     checkOut: toDateLabel(booking.checkOut),
+    checkInTime: booking.checkInTime,
+    checkOutTime: booking.checkOutTime,
+    bookingType: booking.bookingType,
     total: booking.total,
     deposit: deposited,
     status: toStatusCode(booking.status),
@@ -98,7 +104,32 @@ export default function StaffBookings() {
   const [updatingPaymentBookingId, setUpdatingPaymentBookingId] = useState<
     string | null
   >(null);
-  const { confirm, success, error } = useToast();
+  const { confirm, success, error, warning } = useToast();
+
+  const parseLocalDate = (value: string) => new Date(`${value}T00:00:00`);
+
+  const formatBookingDateTime = (
+    date: string,
+    time?: string,
+    bookingType?: string,
+  ) => {
+    if (!date) return "-";
+
+    const localDate = parseLocalDate(date);
+    if (bookingType === "hour" && time) {
+      return `${localDate.toLocaleDateString("vi-VN")} ${time}`;
+    }
+
+    return localDate.toLocaleDateString("vi-VN");
+  };
+
+  const getRefundLabel = (booking: StaffBookingRow) => {
+    if (booking.status !== 3) return null;
+    if (booking.refundStatus === "refunded") return "Đã hoàn tiền";
+    if (booking.refundStatus === "eligible") return "Hủy được hoàn tiền";
+    if (booking.refundStatus === "ineligible") return "Hủy không hoàn tiền";
+    return "Không áp dụng";
+  };
 
   const mapFilterToExportStatus = (filterValue: string) => {
     const statusMap: Record<string, string | undefined> = {
@@ -114,12 +145,17 @@ export default function StaffBookings() {
 
   useEffect(() => {
     const loadBookings = async () => {
-      const result = await dataService.getBookings();
-      setBookings(result.map(mapToRow));
+      try {
+        const result = await dataService.getBookings();
+        setBookings(result.map(mapToRow));
+      } catch (loadError) {
+        console.error(loadError);
+        error("Không thể tải danh sách đặt phòng");
+      }
     };
 
     void loadBookings();
-  }, []);
+  }, [error]);
 
   const handleDeleteBooking = async (id: string) => {
     const target = bookings.find((booking) => booking.id === id);
@@ -129,18 +165,29 @@ export default function StaffBookings() {
       { confirmLabel: "Xóa", cancelLabel: "Hủy" },
     );
     if (shouldDelete) {
-      await dataService.deleteBooking(id);
-      setBookings(bookings.filter((b) => b.id !== id));
-      success(`Đã xóa đặt phòng ${displayName}.`);
+      try {
+        await dataService.deleteBooking(id);
+        setBookings(bookings.filter((b) => b.id !== id));
+        success(`Đã xóa đặt phòng ${displayName}.`);
+      } catch (deleteError) {
+        console.error(deleteError);
+        error("Xóa đặt phòng thất bại");
+      }
     }
   };
 
   const handleStatusChange = async (id: string, newStatus: number) => {
     const statusCode = newStatus as StaffBookingStatusCode;
-    await dataService.updateBookingStatus(id, toStatusValue(statusCode));
-    setBookings(
-      bookings.map((b) => (b.id === id ? { ...b, status: statusCode } : b)),
-    );
+    try {
+      await dataService.updateBookingStatus(id, toStatusValue(statusCode));
+      setBookings(
+        bookings.map((b) => (b.id === id ? { ...b, status: statusCode } : b)),
+      );
+      success("Đã cập nhật trạng thái đặt phòng.");
+    } catch (statusError) {
+      console.error(statusError);
+      error("Cập nhật trạng thái đặt phòng thất bại");
+    }
   };
 
   const handlePaymentStatusChange = async (
@@ -149,6 +196,7 @@ export default function StaffBookings() {
   ) => {
     const target = bookings.find((booking) => booking.id === id);
     if (target && isCancelledStatus(target.status)) {
+      warning("Booking đã hủy không thể thay đổi trạng thái thanh toán.");
       return;
     }
 
@@ -295,7 +343,7 @@ export default function StaffBookings() {
               />
               <input
                 type="text"
-                placeholder="Email, tên khách, phòng, SĐT..."
+                placeholder="Tên khách, phòng, SĐT..."
                 className="input-field pl-10 py-2 text-sm"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -355,8 +403,8 @@ export default function StaffBookings() {
             <table className="w-full text-left border-collapse whitespace-nowrap">
               <thead className="sticky top-0 bg-bg-card z-10">
                 <tr className="border-b border-border-subtle text-text-muted text-xs uppercase tracking-wider">
-                  <th className="p-4 font-medium">Email</th>
                   <th className="p-4 font-medium">Tên khách hàng</th>
+                  <th className="p-4 font-medium">Số điện thoại</th>
                   <th className="p-4 font-medium">Phòng</th>
                   <th className="p-4 font-medium">Check-in / Check-out</th>
                   <th className="p-4 font-medium">Tổng tiền</th>
@@ -370,10 +418,7 @@ export default function StaffBookings() {
               <tbody className="text-sm">
                 {filteredBookings.length === 0 ? (
                   <tr>
-                    <td
-                      colSpan={10}
-                      className="p-8 text-center text-text-muted"
-                    >
+                    <td colSpan={9} className="p-8 text-center text-text-muted">
                       Không tìm thấy đặt phòng nào phù hợp.
                     </td>
                   </tr>
@@ -384,27 +429,31 @@ export default function StaffBookings() {
                       className="border-b border-border-subtle/50 hover:bg-bg-secondary/50 transition-colors group"
                     >
                       <td className="p-4">
-                        <div className="font-mono text-text-primary">
-                          {booking.email}
-                        </div>
-                      </td>
-                      <td className="p-4">
                         <div className="font-bold text-text-primary">
                           {booking.customerName}
                         </div>
-                        <div className="text-xs text-text-muted">
-                          {booking.phone}
-                        </div>
+                      </td>
+                      <td className="p-4 text-text-secondary font-mono">
+                        {booking.phone}
                       </td>
                       <td className="p-4 font-mono text-text-secondary">
                         {booking.room}
                       </td>
                       <td className="p-4">
                         <div className="text-text-primary">
-                          {booking.checkIn}
+                          {formatBookingDateTime(
+                            booking.checkIn,
+                            booking.checkInTime,
+                            booking.bookingType,
+                          )}
                         </div>
                         <div className="text-xs text-text-muted">
-                          đến {booking.checkOut}
+                          đến{" "}
+                          {formatBookingDateTime(
+                            booking.checkOut,
+                            booking.checkOutTime,
+                            booking.bookingType,
+                          )}
                         </div>
                       </td>
                       <td className="p-4 text-text-primary font-mono">
@@ -463,15 +512,9 @@ export default function StaffBookings() {
                         </div>
                       </td>
                       <td className="p-4">
-                        {booking.status === 3 ? (
+                        {getRefundLabel(booking) ? (
                           <span className="px-2 py-1 rounded text-xs font-bold uppercase bg-bg-primary border border-border-subtle text-text-secondary">
-                            {booking.refundStatus === "eligible"
-                              ? "Hủy được hoàn tiền"
-                              : booking.refundStatus === "ineligible"
-                                ? "Hủy không hoàn tiền"
-                                : booking.refundStatus === "refunded"
-                                  ? "Đã hoàn tiền"
-                                  : "Không áp dụng"}
+                            {getRefundLabel(booking)}
                           </span>
                         ) : (
                           <span className="text-xs text-text-muted">-</span>

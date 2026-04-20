@@ -15,20 +15,25 @@ export default function HistoryPage() {
   const router = useRouter();
   const [filter, setFilter] = useState("all");
   const [history, setHistory] = useState<Booking[]>([]);
-  const { warning, success } = useToast();
+  const { warning, success, error } = useToast();
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [bookingToCancel, setBookingToCancel] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
       const loadHistory = async () => {
-        const bookings = await dataService.getBookings(user.email);
-        setHistory(bookings);
+        try {
+          const bookings = await dataService.getBookings(user.email);
+          setHistory(bookings);
+        } catch (loadError) {
+          console.error(loadError);
+          error("Không thể tải lịch sử đặt phòng");
+        }
       };
 
       void loadHistory();
     }
-  }, [user]);
+  }, [error, user]);
 
   const handleCancelClick = (bookingId: string) => {
     setBookingToCancel(bookingId);
@@ -52,13 +57,18 @@ export default function HistoryPage() {
       }
 
       // In real app, we would pass cancelReason to backend
-      await dataService.cancelBooking(bookingToCancel, cancelReason);
-      const bookings = await dataService.getBookings(user.email);
-      setHistory(bookings);
-      setCancelModalOpen(false);
-      setBookingToCancel(null);
-      setCancelReason("");
-      success("Đã hủy đặt phòng thành công.");
+      try {
+        await dataService.cancelBooking(bookingToCancel, cancelReason);
+        const bookings = await dataService.getBookings(user.email);
+        setHistory(bookings);
+        setCancelModalOpen(false);
+        setBookingToCancel(null);
+        setCancelReason("");
+        success("Đã hủy đặt phòng thành công.");
+      } catch (cancelError) {
+        console.error(cancelError);
+        error("Hủy đặt phòng thất bại");
+      }
     }
   };
 
@@ -122,6 +132,57 @@ export default function HistoryPage() {
       default:
         return null;
     }
+  };
+
+  const getRefundBadge = (booking: Booking) => {
+    if (booking.status !== "cancelled") return null;
+
+    const map = {
+      refunded: {
+        label: "Đã hoàn tiền",
+        className: "bg-success/20 text-success border border-success/30",
+      },
+      eligible: {
+        label: "Hủy được hoàn tiền",
+        className: "bg-warning/20 text-warning border border-warning/30",
+      },
+      ineligible: {
+        label: "Hủy không hoàn tiền",
+        className: "bg-danger/20 text-danger border border-danger/30",
+      },
+      none: {
+        label: "Không áp dụng",
+        className:
+          "bg-bg-secondary text-text-muted border border-border-subtle",
+      },
+    } as const;
+
+    const resolved = map[booking.refundStatus || "none"];
+
+    return (
+      <span
+        className={`px-3 py-1 rounded-full text-xs font-bold uppercase inline-flex items-center gap-1 ${resolved.className}`}
+      >
+        {resolved.label}
+      </span>
+    );
+  };
+
+  const parseLocalDate = (value: string) => new Date(`${value}T00:00:00`);
+
+  const formatBookingMoment = (
+    date: string,
+    time?: string,
+    bookingType?: Booking["bookingType"],
+  ) => {
+    if (!date) return "-";
+
+    const localDate = parseLocalDate(date);
+    if (bookingType === "hour" && time) {
+      return `${localDate.toLocaleDateString("vi-VN")} ${time}`;
+    }
+
+    return localDate.toLocaleDateString("vi-VN");
   };
 
   return (
@@ -227,14 +288,12 @@ export default function HistoryPage() {
                             Nhận phòng
                           </div>
                           <div className="font-bold text-text-primary">
-                            {booking.checkIn}
-                          </div>
-                          {booking.bookingType === "hour" &&
-                            booking.checkInTime && (
-                              <div className="text-xs text-text-muted">
-                                {booking.checkInTime}
-                              </div>
+                            {formatBookingMoment(
+                              booking.checkIn,
+                              booking.checkInTime,
+                              booking.bookingType,
                             )}
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-3 text-text-secondary bg-bg-primary px-4 py-2 rounded-lg border border-border-subtle">
@@ -244,14 +303,12 @@ export default function HistoryPage() {
                             Trả phòng
                           </div>
                           <div className="font-bold text-text-primary">
-                            {booking.checkOut}
-                          </div>
-                          {booking.bookingType === "hour" &&
-                            booking.checkOutTime && (
-                              <div className="text-xs text-text-muted">
-                                {booking.checkOutTime}
-                              </div>
+                            {formatBookingMoment(
+                              booking.checkOut,
+                              booking.checkOutTime,
+                              booking.bookingType,
                             )}
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-3 text-text-secondary bg-bg-primary px-4 py-2 rounded-lg border border-border-subtle">
@@ -264,6 +321,21 @@ export default function HistoryPage() {
                             {booking.bookingType === "hour"
                               ? "Theo giờ"
                               : "Theo ngày"}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 text-text-secondary bg-bg-primary px-4 py-2 rounded-lg border border-border-subtle">
+                        <CheckCircle size={18} className="text-success" />
+                        <div>
+                          <div className="text-xs text-text-muted uppercase">
+                            Hoàn tiền
+                          </div>
+                          <div className="font-bold text-text-primary">
+                            {getRefundBadge(booking) || (
+                              <span className="text-text-muted">
+                                Chỉ hiển thị khi hủy
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>

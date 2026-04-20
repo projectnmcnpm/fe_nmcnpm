@@ -7,6 +7,7 @@ import { ArrowLeft, Calendar, Clock, Users } from "lucide-react";
 import { useToast } from "@/components/layout/ToastProvider";
 import { useAuth } from "@/lib/auth-context";
 import { dataService } from "@/lib/data-service";
+import type { RoomAvailabilityDayRecord } from "@/lib/api-client";
 import type { Room } from "@/lib/mock-data";
 
 type BookingType = "day" | "hour";
@@ -28,6 +29,39 @@ function formatCurrency(value: number) {
 
 function parseDateTime(date: string, time: string) {
   return new Date(`${date}T${time}`);
+}
+
+function parseLocalDate(value: string) {
+  return new Date(`${value}T00:00:00`);
+}
+
+function getTodayDate() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+
+function getAvailabilityDaysToFetch(checkOut: string) {
+  const today = getTodayDate();
+  const endDate = parseLocalDate(checkOut);
+  const diffDays = Math.floor(
+    (endDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+  );
+  return Math.min(Math.max(diffDays + 1, 1), 14);
+}
+
+function findAvailabilityConflict(
+  schedule: RoomAvailabilityDayRecord[],
+  checkIn: string,
+  checkOut: string,
+) {
+  const startDate = parseLocalDate(checkIn);
+  const endDate = parseLocalDate(checkOut);
+
+  return schedule.find((entry) => {
+    const entryDate = parseLocalDate(entry.date);
+    return entry.booked && entryDate >= startDate && entryDate <= endDate;
+  });
 }
 
 export default function BookingCreateForm({
@@ -56,6 +90,7 @@ export default function BookingCreateForm({
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerIdNumber, setCustomerIdNumber] = useState("");
   const [notes, setNotes] = useState("");
+  const [isCheckingAvailability, setIsCheckingAvailability] = useState(false);
 
   useEffect(() => {
     const loadRooms = async () => {
@@ -182,14 +217,20 @@ export default function BookingCreateForm({
       return false;
     }
 
-    const checkInDate = new Date(checkIn);
-    const checkOutDate = new Date(checkOut);
+    const today = getTodayDate();
+    const checkInDate = parseLocalDate(checkIn);
+    const checkOutDate = parseLocalDate(checkOut);
 
     if (
       Number.isNaN(checkInDate.getTime()) ||
       Number.isNaN(checkOutDate.getTime())
     ) {
       showError("Ngày nhận/trả phòng không hợp lệ");
+      return false;
+    }
+
+    if (checkInDate < today) {
+      showError("Ngày nhận phòng không được ở trong quá khứ");
       return false;
     }
 
@@ -210,9 +251,14 @@ export default function BookingCreateForm({
       if (
         Number.isNaN(start.getTime()) ||
         Number.isNaN(end.getTime()) ||
+        start < new Date() ||
         end.getTime() <= start.getTime()
       ) {
-        showError("Giờ trả phòng phải sau giờ nhận phòng");
+        if (start < new Date()) {
+          showError("Giờ nhận phòng không được ở trong quá khứ");
+        } else {
+          showError("Giờ trả phòng phải sau giờ nhận phòng");
+        }
         return false;
       }
     }
@@ -238,6 +284,22 @@ export default function BookingCreateForm({
 
     try {
       setIsSubmitting(true);
+
+      const schedule = await dataService.getRoomAvailability(
+        selectedRoom.id,
+        getAvailabilityDaysToFetch(checkOut),
+      );
+      const conflict = findAvailabilityConflict(schedule, checkIn, checkOut);
+
+      if (conflict) {
+        const bookedRanges = conflict.bookedRanges?.length
+          ? conflict.bookedRanges.join(" | ")
+          : "Đã có lịch đặt";
+        showError(
+          `Phòng đã có người đặt ngày ${parseLocalDate(conflict.date).toLocaleDateString("vi-VN")}: ${bookedRanges}`,
+        );
+        return;
+      }
 
       await dataService.createBooking({
         roomId: selectedRoom.id,
@@ -606,9 +668,13 @@ export default function BookingCreateForm({
                 <button
                   type="submit"
                   className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={isSubmitting || isLoadingRooms}
+                  disabled={
+                    isSubmitting || isLoadingRooms || isCheckingAvailability
+                  }
                 >
-                  {isSubmitting ? "Đang xử lý..." : submitLabel}
+                  {isSubmitting || isCheckingAvailability
+                    ? "Đang kiểm tra..."
+                    : submitLabel}
                 </button>
                 <Link
                   href={backHref}
